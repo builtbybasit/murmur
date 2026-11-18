@@ -1,13 +1,13 @@
-// Run: bun src/lib/segment.test.js
+// Run: bun src/lib/segment.test.ts
 import assert from "node:assert/strict";
-import { segmentPara, autoTitle, buildDoc } from "./segment.js";
+import { segmentPara, autoTitle, buildDoc } from "./segment";
 
-const kinds = (p, smart = true) =>
+const kinds = (p: string, smart = true) =>
   segmentPara(p, smart)
     .map((s) => s.kind[0] + ":" + s.text.trim())
     .join(" | ");
 
-const cases = [
+const cases: [string, boolean, string][] = [
   [`"Hi," she said. "Go."`, true, `d:"Hi," | n:she said. | d:"Go."`],
   [`“Curly,” he said.`, true, `d:“Curly,” | n:he said.`],
   [`I don't want the boys' rope.`, true, `n:I don't want the boys' rope.`],
@@ -34,8 +34,8 @@ assert.equal(autoTitle("She ran. Fast.\nMore.", ["Chapter 4"]).title, "Chapter 5
 
 const doc = buildDoc(`"Hi," she said.\n\nThe end.`);
 assert.deepEqual(doc.paras, [[0, 1], [2]]);
-assert.equal(doc.segs[1].core, "she said.");
-assert.deepEqual(doc.segs[1].words, [
+assert.equal(doc.segs[1]!.core, "she said.");
+assert.deepEqual(doc.segs[1]!.words, [
   { t: "she", c: 0 },
   { t: "said.", c: 4 },
 ]);
