@@ -69,6 +69,7 @@ export const ui = reactive({
   sidebarDrawer: false, // narrow-window overlay drawer
   toast: null, // { title, sub?, warn?, actions?: [{label, run}] , id }
   flashId: null, // chapter row to flash
+  renamingId: null, // chapter row in rename mode (Sidebar)
 });
 
 /** Chapters, in list order. chapter = { id, title, body, raw, addedAt, short, pos } (pos = segment index). */
