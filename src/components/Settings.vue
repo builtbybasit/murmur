@@ -18,11 +18,13 @@ import { player, preview, cacheStats, clearCache, retry } from "../engine";
 import { testConnection, fetchVoices } from "../lib/api";
 import { segmentPara } from "../lib/segment";
 import VoicePicker from "./VoicePicker.vue";
+import SpeechRules from "./SpeechRules.vue";
 
 const TABS = [
   ["providers", "Providers"],
   ["voices", "Voices"],
   ["segments", "Segments & timing"],
+  ["speech", "Spoken text"],
   ["storage", "Storage"],
 ] as const;
 const ADD: [PresetKey, string][] = [
@@ -488,6 +490,8 @@ async function clear() {
           >
         </div>
       </template>
+
+      <SpeechRules v-else-if="ui.settingsTab === 'speech'" />
 
       <!-- storage -->
       <template v-else-if="ui.settingsTab === 'storage'">

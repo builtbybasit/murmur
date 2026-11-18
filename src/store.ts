@@ -4,6 +4,8 @@ import { reactive, computed, watch } from "vue";
 import { useLocalStorage, watchDebounced } from "@vueuse/core";
 import { get, set } from "idb-keyval";
 import { buildDoc, normalize, autoTitle, type Doc, type Kind } from "./lib/segment";
+import type { Rule } from "./lib/speech";
+import { DEFAULT_RULES } from "./lib/kaomoji";
 
 export interface Provider {
   id: string;
@@ -25,6 +27,8 @@ export interface Settings {
   narration: VoiceSetting;
   dialogue: VoiceSetting & { same: boolean };
   stt: { enabled: boolean; providerId: string | null; model: string };
+  /** text sent to TTS: replace rules, then automatic emoji/kaomoji removal */
+  speech: { auto: boolean; rules: Rule[] };
   smartQuotes: boolean;
   prefetch: number;
   /** silence between segments / paragraphs, in ms at 1.0x */
@@ -111,6 +115,7 @@ const DEFAULTS: Settings = {
   stt: { enabled: true, providerId: null, model: "whisper-1" },
   smartQuotes: true,
   prefetch: 3,
+  speech: { auto: true, rules: DEFAULT_RULES },
   segmentGap: 0,
   paragraphGap: 300,
   speed: 1,
@@ -134,6 +139,7 @@ const stored = useLocalStorage<Settings>("lectern.settings", DEFAULTS, {
     dialogue: { ...d.dialogue, ...s.dialogue },
     stt: { ...d.stt, ...s.stt },
     reading: { ...d.reading, ...s.reading },
+    speech: { ...d.speech, ...s.speech },
   }),
 });
 /** Persisted settings. Mutate in place; never reassign. */
@@ -142,7 +148,7 @@ export const settings = stored.value;
 /** Transient UI state. */
 export const ui = reactive({
   view: "reader" as "reader" | "settings",
-  settingsTab: "providers" as "providers" | "voices" | "segments" | "storage",
+  settingsTab: "providers" as "providers" | "voices" | "segments" | "speech" | "storage",
   openProviderId: null as string | null, // provider row expanded in Settings
   fixKey: false, // Settings opened from a 401: mark the key field
   currentId: null as string | null, // chapter shown in the reader (the engine plays this one)

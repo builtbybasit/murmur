@@ -7,7 +7,7 @@
     "dev": "vp dev",
     "build": "vp build",
     "preview": "vp preview",
-    "test": "bun src/lib/segment.test.ts && bun src/lib/align.test.ts && bun src/lib/voice.test.ts",
+    "test": "bun src/lib/segment.test.ts && bun src/lib/align.test.ts && bun src/lib/voice.test.ts && bun src/lib/speech.test.ts",
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {

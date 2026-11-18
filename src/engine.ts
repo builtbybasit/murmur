@@ -1,6 +1,6 @@
 // Playback engine: TTS per segment with prefetch, audio cache, STT alignment, retries.
 // CONTRACT: UI components only read `player` and call the exported functions below.
-import { reactive, watch } from "vue";
+import { computed, reactive, watch } from "vue";
 import {
   settings,
   ui,
@@ -18,6 +18,7 @@ import type { Doc } from "./lib/segment";
 import { tts, stt as transcribe, ApiError, type ErrorCode, type ProviderError } from "./lib/api";
 import { alignWords, estimateTimes, type Span, type SttWord } from "./lib/align";
 import * as cache from "./lib/cache";
+import { makeSpeaker } from "./lib/speech";
 
 export type Status = "idle" | "buffering" | "playing" | "paused" | "error" | "ended";
 export type SegState = "loading" | "ready" | "failed";
@@ -118,6 +119,9 @@ const segs = () => doc?.segs ?? [];
 const chapter = () => library.chapters.find((c) => c.id === chId) ?? null;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v || 0));
 const estDur = (i: number) => durs[i] ?? segs()[i]!.core.length / CHARS_PER_SEC;
+/** What the TTS is sent for a segment (rules + emoji/kaomoji removal). Recompiled when settings change. */
+const speaker = computed(() => makeSpeaker(settings.speech));
+const sayOf = (i: number) => speaker.value(segs()[i]!.core);
 const before = (i: number) => {
   let s = 0;
   for (let j = 0; j < i; j++) s += estDur(j);
@@ -126,7 +130,7 @@ const before = (i: number) => {
 const keyFor = (i: number) => {
   const seg = segs()[i]!;
   const v = voiceFor(seg.kind);
-  return cache.cacheKey(v.provider?.baseUrl ?? "", v.model, v.voice, seg.core);
+  return cache.cacheKey(v.provider?.baseUrl ?? "", v.model, v.voice, sayOf(seg.i));
 };
 const timesOf = (i: number, m: Mem) => m.times ?? (m.est ??= estimateTimes(segs()[i]!, m.duration));
 const toPlain = (e: unknown): ProviderError =>
@@ -174,6 +178,28 @@ function el() {
     );
   });
   return a;
+}
+
+/** A silent 16-bit mono WAV of `sec` seconds. */
+function silence(sec: number, rate = 8000) {
+  const n = Math.round(sec * rate);
+  const v = new DataView(new ArrayBuffer(44 + n * 2));
+  const str = (o: number, x: string) => {
+    for (let k = 0; k < x.length; k++) v.setUint8(o + k, x.charCodeAt(k));
+  };
+  str(0, "RIFF");
+  v.setUint32(4, 36 + n * 2, true);
+  str(8, "WAVEfmt ");
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true);
+  v.setUint32(28, rate * 2, true);
+  v.setUint16(32, 2, true);
+  v.setUint16(34, 16, true);
+  str(36, "data");
+  v.setUint32(40, n * 2, true);
+  return new Blob([v.buffer], { type: "audio/wav" });
 }
 
 let actx: OfflineAudioContext | null = null;
@@ -396,7 +422,11 @@ function fetchSeg(i: number) {
   const ac = new AbortController();
   jobs.set(i, ac);
   (async () => {
-    let e = await cache.getEntry(key).catch(() => undefined);
+    const say = sayOf(i);
+    let e: cache.CacheEntry | undefined;
+    // nothing speakable (a line that was only a kaomoji): a short silence, no request
+    if (!say) e = { blob: silence(0.3), duration: 0.3, bytes: 0, stt: [], at: Date.now() };
+    else e = await cache.getEntry(key).catch(() => undefined);
     if (!e) {
       if (!v.provider)
         throw new ApiError({
@@ -411,10 +441,10 @@ function fetchSeg(i: number) {
         provider: v.provider,
         model: v.model,
         voice: v.voice,
-        input: seg.core,
+        input: say,
         signal: ac.signal,
       });
-      const duration = (await durationOf(blob)) ?? seg.core.length / CHARS_PER_SEC;
+      const duration = (await durationOf(blob)) ?? say.length / CHARS_PER_SEC;
       e = { blob, duration, bytes: blob.size, stt: null, at: Date.now() };
       cache.putEntry(key, e).catch(noop); // quota errors: still playable from memory
     }
@@ -623,6 +653,11 @@ watch(
     (["narr", "dlg"] as const)
       .map((k) => ((v) => [v.provider?.baseUrl, v.model, v.voice].join("|"))(voiceFor(k)))
       .join("#"),
+  () => refresh(),
+);
+// Spoken-text rules changed: affected segments get new cache keys, like a voice change.
+watch(
+  () => JSON.stringify(settings.speech),
   () => refresh(),
 );
 watch(
