@@ -110,7 +110,9 @@ const toError = (e: unknown): ProviderError =>
     ? e.plain()
     : { code: "network", status: 0, message: String((e as Error)?.message ?? e), retryAfter: null };
 
-/** POST /audio/speech -> audio Blob. Asks for mp3; on a 4xx retries once letting the server pick. */
+const noMp3 = new Set<string>(); // base URLs that rejected response_format: mp3
+
+/** POST /audio/speech -> audio Blob. Asks for mp3; on a 4xx retries once letting the server pick, and remembers. */
 export async function tts(o: {
   provider: Provider;
   model: string;
@@ -119,18 +121,20 @@ export async function tts(o: {
   signal?: AbortSignal;
 }): Promise<Blob> {
   const json = { model: o.model, voice: o.voice, input: o.input, response_format: "mp3" };
+  const { response_format: _, ...rest } = json;
+  const plain = () =>
+    call(o.provider, "/audio/speech", { json: rest, signal: o.signal, accept: "audio/*" });
   let r: Response;
-  try {
-    r = await call(o.provider, "/audio/speech", { json, signal: o.signal, accept: "audio/*" });
-  } catch (e) {
-    if (!(e instanceof ApiError && e.code === "http" && e.status >= 400 && e.status < 500)) throw e;
-    const { response_format: _, ...rest } = json;
-    r = await call(o.provider, "/audio/speech", {
-      json: rest,
-      signal: o.signal,
-      accept: "audio/*",
-    });
-  }
+  if (noMp3.has(o.provider.baseUrl)) r = await plain();
+  else
+    try {
+      r = await call(o.provider, "/audio/speech", { json, signal: o.signal, accept: "audio/*" });
+    } catch (e) {
+      if (!(e instanceof ApiError && e.code === "http" && e.status >= 400 && e.status < 500))
+        throw e;
+      r = await plain();
+      noMp3.add(o.provider.baseUrl);
+    }
   const blob = await r.blob();
   if (!blob.size)
     throw new ApiError({

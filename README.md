@@ -1,5 +1,17 @@
-# Vue 3 + Vite
+# lectern
 
-This template should help get you started developing with Vue 3 in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+Paste webnovel chapters, listen to them through any OpenAI-compatible TTS, and follow along with word-level highlighting timed by OpenAI-compatible STT. Local, single-user.
 
-Learn more about IDE Support for Vue in the [Vue Docs Scaling up Guide](https://vuejs.org/guide/scaling-up/tooling.html#ide-support).
+```sh
+bun install
+vp dev            # app + /relay (forwards provider calls, so CORS never applies)
+```
+
+Paste a chapter with ⌘V anywhere. Add providers in Settings (⌘,).
+
+- Your local servers: nano-edge-server TTS at `http://localhost:8020/v1`, phonon STT at `http://localhost:8010/v1` (model `FermionResearch/Phonon-2`).
+- No real provider? `bun dev/fake-provider.ts` serves a fake TTS+STT at `http://localhost:8899/v1`. Voices `fail401`, `fail429`, `fail500`, `flaky`, `slow`, `sttfail` inject failures.
+
+Checks: `bun run test`, `bun run typecheck`, `vp lint`, `vp fmt`.
+
+Design spec and mockup: `design/`.
