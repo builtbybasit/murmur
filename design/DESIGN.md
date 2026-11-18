@@ -39,13 +39,13 @@ Design principles, in priority order:
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-| Region | Size | Contents | Persistence |
-|---|---|---|---|
-| Top bar | 44px | sidebar toggle, wordmark, current chapter title, `Aa` reading popover, shortcuts, settings | always |
-| Sidebar | 264px, collapsible (`B`) | chapter list, paste slot pinned at the bottom | always; overlay drawer under 820px |
-| Main | rest | reader, or settings, or onboarding when the library is empty | swaps |
-| Error strip | auto | one failed-segment message with actions | only in error state |
-| Player bar | 56px + 3px track on its top edge | transport, status, voice chip, timing chip, speed | always, including in settings |
+| Region      | Size                             | Contents                                                                                   | Persistence                        |
+| ----------- | -------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------- |
+| Top bar     | 44px                             | sidebar toggle, wordmark, current chapter title, `Aa` reading popover, shortcuts, settings | always                             |
+| Sidebar     | 264px, collapsible (`B`)         | chapter list, paste slot pinned at the bottom                                              | always; overlay drawer under 820px |
+| Main        | rest                             | reader, or settings, or onboarding when the library is empty                               | swaps                              |
+| Error strip | auto                             | one failed-segment message with actions                                                    | only in error state                |
+| Player bar  | 56px + 3px track on its top edge | transport, status, voice chip, timing chip, speed                                          | always, including in settings      |
 
 The player bar stays visible in Settings so playback continues while you change a voice or fix a key.
 
@@ -81,12 +81,12 @@ Visible affordances for the same action (for discoverability and mouse use):
 
 Managing chapters (all in the sidebar, each row 32px):
 
-| Action | Mouse | Keyboard (row focused) |
-|---|---|---|
-| Open | click row | `Enter` |
-| Rename | pencil on hover, or Rename in the toast | `F2`, then `Enter` to save, `Esc` to cancel |
-| Reorder | drag by the grip; an accent line shows the drop position | `⌥↑` / `⌥↓` |
-| Delete | trash on hover | `⌫` / `Delete` |
+| Action  | Mouse                                                    | Keyboard (row focused)                      |
+| ------- | -------------------------------------------------------- | ------------------------------------------- |
+| Open    | click row                                                | `Enter`                                     |
+| Rename  | pencil on hover, or Rename in the toast                  | `F2`, then `Enter` to save, `Esc` to cancel |
+| Reorder | drag by the grip; an accent line shows the drop position | `⌥↑` / `⌥↓`                                 |
+| Delete  | trash on hover                                           | `⌫` / `Delete`                              |
 
 Delete is immediate with an Undo toast, never a confirm dialog. Cached audio of a deleted chapter is kept until the cache is cleared, so Undo is free.
 
@@ -104,15 +104,15 @@ Row anatomy: index (replaced by animated bars while that chapter is playing), ti
 
 ### Highlighting
 
-| Layer | Look | Meaning |
-|---|---|---|
-| Current paragraph | 2px vertical bar in the left gutter (18px outside the column) | where you are, even when scrolled quickly |
-| Current segment | soft band behind the text, 11% of the segment color, text raised to the high-contrast ink | the unit being spoken; also the unit of one TTS request |
-| Current word, aligned | 36% wash of the segment color plus a 2px underline in that color | timed from real word timestamps |
-| Current word, estimated | 26% wash, no underline | timed by character position |
-| Word hover | 16% wash, pointer cursor | click to play from here |
-| Waiting segment | the band gets a slow moving sheen | audio for this segment is being generated |
-| Failed segment | red wavy underline, red-tinted band | generation failed here |
+| Layer                   | Look                                                                                      | Meaning                                                 |
+| ----------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Current paragraph       | 2px vertical bar in the left gutter (18px outside the column)                             | where you are, even when scrolled quickly               |
+| Current segment         | soft band behind the text, 11% of the segment color, text raised to the high-contrast ink | the unit being spoken; also the unit of one TTS request |
+| Current word, aligned   | 36% wash of the segment color plus a 2px underline in that color                          | timed from real word timestamps                         |
+| Current word, estimated | 26% wash, no underline                                                                    | timed by character position                             |
+| Word hover              | 16% wash, pointer cursor                                                                  | click to play from here                                 |
+| Waiting segment         | the band gets a slow moving sheen                                                         | audio for this segment is being generated               |
+| Failed segment          | red wavy underline, red-tinted band                                                       | generation failed here                                  |
 
 Notes:
 
@@ -131,14 +131,14 @@ Notes:
 
 Changes apply live to the text behind the popover.
 
-| Setting | Options | Default |
-|---|---|---|
-| Font | Source Serif 4, Literata, Atkinson Hyperlegible, Geist Sans | Source Serif 4 |
-| Size | 15 to 26px | 19px |
-| Line height | 1.40 to 2.00 | 1.70 |
-| Width | 48 to 88ch | 66ch |
-| Theme | Light, Dark, System | System |
-| Tint dialogue text | on / off | on |
+| Setting            | Options                                                     | Default        |
+| ------------------ | ----------------------------------------------------------- | -------------- |
+| Font               | Source Serif 4, Literata, Atkinson Hyperlegible, Geist Sans | Source Serif 4 |
+| Size               | 15 to 26px                                                  | 19px           |
+| Line height        | 1.40 to 2.00                                                | 1.70           |
+| Width              | 48 to 88ch                                                  | 66ch           |
+| Theme              | Light, Dark, System                                         | System         |
+| Tint dialogue text | on / off                                                    | on             |
 
 ### Segmentation rules as the reader shows them
 
@@ -176,12 +176,12 @@ Full main-region screen (`⌘,`, `Esc` returns), left nav with four sections. Ev
 
 A list of rows: status dot, name, base URL, role tags showing where the provider is used (`narration`, `dialogue`, `alignment`), voice count. Click a row to expand it in place.
 
-| Field | Notes |
-|---|---|
-| Name | free text |
-| Base URL | e.g. `https://api.openai.com/v1`, `http://localhost:8880/v1` |
-| API key | password field; `Optional for local servers` |
-| Voices | textarea, **one id per line** (blend ids contain commas). Suggestions only; the voice field stays free text |
+| Field    | Notes                                                                                                       |
+| -------- | ----------------------------------------------------------------------------------------------------------- |
+| Name     | free text                                                                                                   |
+| Base URL | e.g. `https://api.openai.com/v1`, `http://localhost:8880/v1`                                                |
+| API key  | password field; `Optional for local servers`                                                                |
+| Voices   | textarea, **one id per line** (blend ids contain commas). Suggestions only; the voice field stays free text |
 
 Buttons: **Test connection** (calls `GET /models` through the relay; result inline: `Connected in 212 ms · 3 models`; model ids become suggestions), **Fetch voices** (`GET /audio/voices`; on 404: `this server has no /audio/voices. Type voice ids by hand.`), **Remove**.
 
@@ -210,25 +210,25 @@ Audio cache (segment count, size, **Clear cache**), word timings (cleared with a
 
 ## 6. States
 
-| State | What the user sees | What they can do |
-|---|---|---|
-| **First run, no providers, no chapters** | Main region shows `Two things, then you can listen` with two cards side by side. Card 1 is an inline provider form with presets (Local Kokoro preselected, URL filled in) and `Test and save`. Card 2 is the paste zone. The sidebar and player are present but quiet. | Do either first. Saving a provider sets narration to its first voice. |
-| **Chapters but no provider** | Reader works normally. Player play button is grey; status reads `No TTS provider · Reading works. Listening needs one. Add a provider`. | Read; click the link or play to open Providers. |
-| **Empty library, provider set** | Same screen with card 1 ticked green and the title `Add your first chapter`. | Paste. |
-| **Chapter with nothing generated** | Full text, no highlight, gutter bar on paragraph one. Meta line ends `nothing generated yet`. Player: `Ready to play · 19 segments · about 1 min · generated as you listen`. Track empty. | Play, or click any word to start there. |
-| **Buffering, first segment or mid-chapter** | Play button shows a spinner. The waiting segment has the moving sheen. Status: `Generating segment 1…` with provider and model beneath. Text stays readable; no overlay. | Pause, or click another word. |
-| **Provider error mid-chapter** | Playback continues through whatever is already buffered and stops **at** the failed segment, which gets the red wavy underline. A red strip appears above the player; the play button turns red; status: `Stopped at segment 6 · 5 segments before it are cached`; red notch on the track. | See below. |
-| **STT failing, TTS fine** | Nothing interrupts. The word highlight loses its underline; the timing chip shows `Estimated` with an amber dot. Its popover: `Local STT failed on 3 segments (HTTP 500), so alignment is paused for this chapter. Audio is not affected.` | `Retry alignment` or `Turn off`. |
-| **Long chapter (5k+ words)** | Only the current segment and the prefetch window are requested, never the whole chapter. Meta line shows `96 of 433 cached`. Resuming jumps straight to the saved position. Follow keeps the word in view; the pill returns you after free scrolling. Track shows played, buffered and remaining at a glance. | Click the track or any word to seek. `⇧←` / `⇧→` move by paragraph. |
+| State                                       | What the user sees                                                                                                                                                                                                                                                                                            | What they can do                                                      |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| **First run, no providers, no chapters**    | Main region shows `Two things, then you can listen` with two cards side by side. Card 1 is an inline provider form with presets (Local Kokoro preselected, URL filled in) and `Test and save`. Card 2 is the paste zone. The sidebar and player are present but quiet.                                        | Do either first. Saving a provider sets narration to its first voice. |
+| **Chapters but no provider**                | Reader works normally. Player play button is grey; status reads `No TTS provider · Reading works. Listening needs one. Add a provider`.                                                                                                                                                                       | Read; click the link or play to open Providers.                       |
+| **Empty library, provider set**             | Same screen with card 1 ticked green and the title `Add your first chapter`.                                                                                                                                                                                                                                  | Paste.                                                                |
+| **Chapter with nothing generated**          | Full text, no highlight, gutter bar on paragraph one. Meta line ends `nothing generated yet`. Player: `Ready to play · 19 segments · about 1 min · generated as you listen`. Track empty.                                                                                                                     | Play, or click any word to start there.                               |
+| **Buffering, first segment or mid-chapter** | Play button shows a spinner. The waiting segment has the moving sheen. Status: `Generating segment 1…` with provider and model beneath. Text stays readable; no overlay.                                                                                                                                      | Pause, or click another word.                                         |
+| **Provider error mid-chapter**              | Playback continues through whatever is already buffered and stops **at** the failed segment, which gets the red wavy underline. A red strip appears above the player; the play button turns red; status: `Stopped at segment 6 · 5 segments before it are cached`; red notch on the track.                    | See below.                                                            |
+| **STT failing, TTS fine**                   | Nothing interrupts. The word highlight loses its underline; the timing chip shows `Estimated` with an amber dot. Its popover: `Local STT failed on 3 segments (HTTP 500), so alignment is paused for this chapter. Audio is not affected.`                                                                    | `Retry alignment` or `Turn off`.                                      |
+| **Long chapter (5k+ words)**                | Only the current segment and the prefetch window are requested, never the whole chapter. Meta line shows `96 of 433 cached`. Resuming jumps straight to the saved position. Follow keeps the word in view; the pill returns you after free scrolling. Track shows played, buffered and remaining at a glance. | Click the track or any word to seek. `⇧←` / `⇧→` move by paragraph.   |
 
 ### Provider errors in detail
 
-| Error | Strip text | Automatic behaviour | Actions |
-|---|---|---|---|
-| 401 / 403 | `401 Unauthorized · <provider> rejected the API key. Nothing is retried until the key is fixed.` | none | **Fix key** (opens that provider expanded, key field marked, Test button primary), Retry `R`, Skip segment |
-| 429 | `429 Too Many Requests · <provider> is rate limiting. Retrying in 6 s (attempt 1 of 3).` | honours `Retry-After`, else 6s, 12s, 24s | **Retry now** `R`, Skip segment |
-| Network / 5xx | `Network error · Can't reach localhost:8880. Is the server running? Retrying in 4 s (attempt 1 of 3).` | 4s, 8s, 16s | **Retry now** `R`, Open provider, Skip segment |
-| after 3 failed attempts | same text ending `Gave up after 3 attempts.` | none | Retry, Skip segment |
+| Error                   | Strip text                                                                                             | Automatic behaviour                      | Actions                                                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| 401 / 403               | `401 Unauthorized · <provider> rejected the API key. Nothing is retried until the key is fixed.`       | none                                     | **Fix key** (opens that provider expanded, key field marked, Test button primary), Retry `R`, Skip segment |
+| 429                     | `429 Too Many Requests · <provider> is rate limiting. Retrying in 6 s (attempt 1 of 3).`               | honours `Retry-After`, else 6s, 12s, 24s | **Retry now** `R`, Skip segment                                                                            |
+| Network / 5xx           | `Network error · Can't reach localhost:8880. Is the server running? Retrying in 4 s (attempt 1 of 3).` | 4s, 8s, 16s                              | **Retry now** `R`, Open provider, Skip segment                                                             |
+| after 3 failed attempts | same text ending `Gave up after 3 attempts.`                                                           | none                                     | Retry, Skip segment                                                                                        |
 
 Rules: the strip is not a modal and does not steal focus. `Space` and `R` both retry. A successful Test connection on the failing provider resumes playback from the failed segment and says so in a toast. A skipped segment keeps its red underline; clicking it later brings the strip back so it can be retried.
 
@@ -240,26 +240,26 @@ STT rules: alignment requests never retry automatically; after 3 failures in a r
 
 Active everywhere except inside text fields.
 
-| Key | Action |
-|---|---|
-| `Space` | play / pause; retry when stopped on an error |
-| `←` / `→` | previous / next segment |
-| `⇧←` / `⇧→` | previous / next paragraph |
-| `K` / `J` | previous / next chapter |
-| `[` / `]` | slower / faster by 0.1× |
-| `F` | back to the current word, resume following |
-| `R` | retry the failed segment |
-| `⌘V` | add a chapter from the clipboard |
-| `⌘Z` | undo the last add or delete |
-| `B` | toggle the chapter list |
-| `A` | reading settings popover |
-| `⌘,` | settings; `Esc` returns to the reader |
-| `?` | shortcut sheet |
-| `↑` / `↓` on a chapter row | move focus through the list |
-| `Enter` on a chapter row | open it |
-| `F2` on a chapter row | rename |
-| `⌥↑` / `⌥↓` on a chapter row | move the chapter |
-| `⌫` on a chapter row | delete, with Undo toast |
+| Key                          | Action                                       |
+| ---------------------------- | -------------------------------------------- |
+| `Space`                      | play / pause; retry when stopped on an error |
+| `←` / `→`                    | previous / next segment                      |
+| `⇧←` / `⇧→`                  | previous / next paragraph                    |
+| `K` / `J`                    | previous / next chapter                      |
+| `[` / `]`                    | slower / faster by 0.1×                      |
+| `F`                          | back to the current word, resume following   |
+| `R`                          | retry the failed segment                     |
+| `⌘V`                         | add a chapter from the clipboard             |
+| `⌘Z`                         | undo the last add or delete                  |
+| `B`                          | toggle the chapter list                      |
+| `A`                          | reading settings popover                     |
+| `⌘,`                         | settings; `Esc` returns to the reader        |
+| `?`                          | shortcut sheet                               |
+| `↑` / `↓` on a chapter row   | move focus through the list                  |
+| `Enter` on a chapter row     | open it                                      |
+| `F2` on a chapter row        | rename                                       |
+| `⌥↑` / `⌥↓` on a chapter row | move the chapter                             |
+| `⌫` on a chapter row         | delete, with Undo toast                      |
 
 `Ctrl` replaces `⌘` on Windows and Linux.
 
@@ -269,40 +269,40 @@ Active everywhere except inside text fields.
 
 ### Color
 
-| Token | Dark | Light | Use |
-|---|---|---|---|
-| `--bg` | `#0b0f15` | `#e9edf3` | app background, inset wells |
-| `--surface` | `#11161e` | `#f4f6fa` | top bar, sidebar, player, cards |
-| `--raised` | `#171e28` | `#ffffff` | buttons, inputs, popovers, toasts |
-| `--hover` | `#1c2531` | `#e3e8ef` | hover fill |
-| `--line` | `#222b38` | `#d5dce6` | hairlines, track |
-| `--line2` | `#324054` | `#b9c4d2` | control borders, gutter bar |
-| `--page` | `#0e131a` | `#fbfcfe` | reading surface (cool, never cream) |
-| `--ink` | `#d3dbe8` | `#1c2532` | body and reading text |
-| `--ink-hi` | `#f1f5fb` | `#0a111c` | headings, current segment |
-| `--ink2` | `#93a1b5` | `#506076` | secondary text |
-| `--ink3` | `#66758b` | `#728096` | meta, placeholders |
-| `--acc` | `#7da5ff` | `#2d5bdb` | primary action, narration, progress |
-| `--on-acc` | `#0a1222` | `#ffffff` | text on accent |
-| `--dlg` | `#58d0be` | `#0a7d70` | dialogue |
-| `--warn` | `#e2b25e` | `#9a6207` | STT failing, short paste |
-| `--err` | `#f27981` | `#c5303c` | provider errors |
-| `--ok` | `#62cf98` | `#1c8551` | connected, done |
+| Token       | Dark      | Light     | Use                                 |
+| ----------- | --------- | --------- | ----------------------------------- |
+| `--bg`      | `#0b0f15` | `#e9edf3` | app background, inset wells         |
+| `--surface` | `#11161e` | `#f4f6fa` | top bar, sidebar, player, cards     |
+| `--raised`  | `#171e28` | `#ffffff` | buttons, inputs, popovers, toasts   |
+| `--hover`   | `#1c2531` | `#e3e8ef` | hover fill                          |
+| `--line`    | `#222b38` | `#d5dce6` | hairlines, track                    |
+| `--line2`   | `#324054` | `#b9c4d2` | control borders, gutter bar         |
+| `--page`    | `#0e131a` | `#fbfcfe` | reading surface (cool, never cream) |
+| `--ink`     | `#d3dbe8` | `#1c2532` | body and reading text               |
+| `--ink-hi`  | `#f1f5fb` | `#0a111c` | headings, current segment           |
+| `--ink2`    | `#93a1b5` | `#506076` | secondary text                      |
+| `--ink3`    | `#66758b` | `#728096` | meta, placeholders                  |
+| `--acc`     | `#7da5ff` | `#2d5bdb` | primary action, narration, progress |
+| `--on-acc`  | `#0a1222` | `#ffffff` | text on accent                      |
+| `--dlg`     | `#58d0be` | `#0a7d70` | dialogue                            |
+| `--warn`    | `#e2b25e` | `#9a6207` | STT failing, short paste            |
+| `--err`     | `#f27981` | `#c5303c` | provider errors                     |
+| `--ok`      | `#62cf98` | `#1c8551` | connected, done                     |
 
 Derived fills use `color-mix` of the segment color into transparent: segment band 11%, hover word 16%, estimated word 26%, aligned word 36%. Selected rows are 13% accent. The error strip is 11% `--err` over `--surface`.
 
 ### Type
 
-| Role | Font | Size / line | Weight |
-|---|---|---|---|
-| UI base | Geist | 13 / 1.45 | 400 |
-| UI emphasis, buttons | Geist | 12.5 to 13 | 500 |
-| Section label (caps, +0.06em) | Geist | 11 | 600 |
-| Settings heading | Geist | 16 | 600 |
-| Numerals, ids, URLs, kbd | Geist Mono, tabular | 11.5 to 12 | 400 to 500 |
-| Reading body | Source Serif 4 (user-selectable) | 19 / 1.7 default | 400 |
-| Chapter title | reading font | 1.55em / 1.2 | 600 |
-| Onboarding title | reading font | 26 / 1.2 | 600 |
+| Role                          | Font                             | Size / line      | Weight     |
+| ----------------------------- | -------------------------------- | ---------------- | ---------- |
+| UI base                       | Geist                            | 13 / 1.45        | 400        |
+| UI emphasis, buttons          | Geist                            | 12.5 to 13       | 500        |
+| Section label (caps, +0.06em) | Geist                            | 11               | 600        |
+| Settings heading              | Geist                            | 16               | 600        |
+| Numerals, ids, URLs, kbd      | Geist Mono, tabular              | 11.5 to 12       | 400 to 500 |
+| Reading body                  | Source Serif 4 (user-selectable) | 19 / 1.7 default | 400        |
+| Chapter title                 | reading font                     | 1.55em / 1.2     | 600        |
+| Onboarding title              | reading font                     | 26 / 1.2         | 600        |
 
 Reading measure defaults to 66ch. UI type inside the reading column (the meta line, the end card) does not scale with the reading size.
 

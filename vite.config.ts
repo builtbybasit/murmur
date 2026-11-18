@@ -4,6 +4,12 @@ import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { defineConfig, lazyPlugins, type Plugin } from "vite-plus";
 
+async function readBody(req: IncomingMessage) {
+  const chunks: Buffer[] = [];
+  for await (const c of req) chunks.push(c as Buffer);
+  return Buffer.concat(chunks);
+}
+
 // Browser -> /relay (x-target: full provider URL) -> provider. Avoids CORS on every provider.
 // ponytail: open relay on the dev/preview server, fine while Vite binds localhost only.
 async function relay(req: IncomingMessage, res: ServerResponse) {
@@ -24,17 +30,19 @@ async function relay(req: IncomingMessage, res: ServerResponse) {
     const r = await fetch(target, {
       method: req.method ?? "GET",
       headers,
-      body: hasBody ? (Readable.toWeb(req) as unknown as BodyInit) : undefined,
+      // buffered, not streamed: some servers (phonon) reject chunked request bodies
+      body: hasBody ? await readBody(req) : undefined,
       signal: ac.signal,
-      // @ts-expect-error duplex is required by Node for streamed bodies but missing from lib.dom RequestInit
-      duplex: "half",
     });
     res.statusCode = r.status;
     for (const k of ["content-type", "retry-after"]) {
       const v = r.headers.get(k);
       if (v) res.setHeader(k, v);
     }
-    if (r.body) Readable.fromWeb(r.body as NodeReadableStream).on("error", () => res.destroy()).pipe(res);
+    if (r.body)
+      Readable.fromWeb(r.body as NodeReadableStream)
+        .on("error", () => res.destroy())
+        .pipe(res);
     else res.end();
   } catch (e: any) {
     if (ac.signal.aborted) return;

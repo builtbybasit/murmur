@@ -28,7 +28,14 @@ export interface Settings {
   smartQuotes: boolean;
   prefetch: number;
   speed: number;
-  reading: { font: FontKey; size: number; lineHeight: number; width: number; theme: "light" | "dark" | "system"; tintDialogue: boolean };
+  reading: {
+    font: FontKey;
+    size: number;
+    lineHeight: number;
+    width: number;
+    theme: "light" | "dark" | "system";
+    tintDialogue: boolean;
+  };
   sidebarOpen: boolean;
   lastChapterId: string | null;
 }
@@ -58,9 +65,19 @@ export type PresetKey = "kokoro" | "openai" | "stt" | "blank";
 export const PRESETS: Record<PresetKey, Omit<Provider, "id" | "apiKey">> = {
   kokoro: {
     name: "Kokoro (local)",
-    baseUrl: "http://localhost:8880/v1",
+    baseUrl: "http://localhost:8020/v1",
     models: ["kokoro"],
-    voices: ["af_heart", "af_bella", "af_nicole", "af_sky", "am_onyx", "am_michael", "bf_emma", "bm_george", "af_heart:0.7,af_bella:0.3"],
+    voices: [
+      "af_heart",
+      "af_bella",
+      "af_nicole",
+      "af_sky",
+      "am_onyx",
+      "am_michael",
+      "bf_emma",
+      "bm_george",
+      "af_heart:0.7,af_bella:0.3",
+    ],
   },
   openai: {
     name: "OpenAI",
@@ -68,7 +85,12 @@ export const PRESETS: Record<PresetKey, Omit<Provider, "id" | "apiKey">> = {
     models: ["gpt-4o-mini-tts", "tts-1", "tts-1-hd", "whisper-1"],
     voices: ["alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer"],
   },
-  stt: { name: "Local STT", baseUrl: "http://localhost:8000/v1", models: ["whisper-1"], voices: [] },
+  stt: {
+    name: "Local STT",
+    baseUrl: "http://localhost:8010/v1",
+    models: ["FermionResearch/Phonon-2"],
+    voices: [],
+  },
   blank: { name: "New provider", baseUrl: "", models: [], voices: [] },
 };
 
@@ -87,7 +109,14 @@ const DEFAULTS: Settings = {
   smartQuotes: true,
   prefetch: 3,
   speed: 1,
-  reading: { font: "serif", size: 19, lineHeight: 1.7, width: 66, theme: "system", tintDialogue: true },
+  reading: {
+    font: "serif",
+    size: 19,
+    lineHeight: 1.7,
+    width: 66,
+    theme: "system",
+    tintDialogue: true,
+  },
   sidebarOpen: true,
   lastChapterId: null,
 };
@@ -124,7 +153,7 @@ export const ui = reactive({
 /** Chapters, in list order. chapter = { id, title, body, raw, addedAt, short, pos } (pos = segment index). */
 export const library = reactive({ chapters: [] as Chapter[], loaded: false });
 
-get<Chapter[]>("chapters").then((cs) => {
+void get<Chapter[]>("chapters").then((cs) => {
   library.chapters = cs || [];
   library.loaded = true;
   ui.currentId = library.chapters.some((c) => c.id === settings.lastChapterId)
@@ -157,10 +186,16 @@ export function docOf(ch: Chapter): Doc {
 export const current = computed(() => library.chapters.find((c) => c.id === ui.currentId) ?? null);
 export const currentDoc = computed(() => (current.value ? docOf(current.value) : null));
 
-export const providerById = (id: string | null | undefined): Provider | null => settings.providers.find((p) => p.id === id) ?? null;
+export const providerById = (id: string | null | undefined): Provider | null =>
+  settings.providers.find((p) => p.id === id) ?? null;
 
 /** Resolved voice for a segment kind (provider may be null). */
-export function voiceFor(kind: Kind): { role: Role; provider: Provider | null; model: string; voice: string } {
+export function voiceFor(kind: Kind): {
+  role: Role;
+  provider: Provider | null;
+  model: string;
+  voice: string;
+} {
   const role: Role = kind === "dlg" && !settings.dialogue.same ? "dialogue" : "narration";
   const v = settings[role];
   return { role, provider: providerById(v.providerId), model: v.model, voice: v.voice };
@@ -196,14 +231,28 @@ export const newId = (p: string) => p + (uid++).toString(36);
 
 export function addProvider(preset: PresetKey = "blank"): Provider {
   const p = PRESETS[preset];
-  const prov: Provider = { id: newId("p"), name: p.name, baseUrl: p.baseUrl, apiKey: "", models: [...p.models], voices: [...p.voices] };
+  const prov: Provider = {
+    id: newId("p"),
+    name: p.name,
+    baseUrl: p.baseUrl,
+    apiKey: "",
+    models: [...p.models],
+    voices: [...p.voices],
+  };
   settings.providers.push(prov);
   // first provider fills empty roles so a fresh install can play immediately
   if (!settings.narration.providerId && preset !== "stt") {
-    Object.assign(settings.narration, { providerId: prov.id, model: prov.models[0] ?? "", voice: prov.voices[0] ?? "" });
+    Object.assign(settings.narration, {
+      providerId: prov.id,
+      model: prov.models[0] ?? "",
+      voice: prov.voices[0] ?? "",
+    });
   }
   if (!settings.stt.providerId && (preset === "stt" || preset === "openai")) {
-    Object.assign(settings.stt, { providerId: prov.id, model: preset === "openai" ? "whisper-1" : (prov.models[0] ?? "whisper-1") });
+    Object.assign(settings.stt, {
+      providerId: prov.id,
+      model: preset === "openai" ? "whisper-1" : (prov.models[0] ?? "whisper-1"),
+    });
   }
   return settings.providers.at(-1)!;
 }
@@ -211,7 +260,8 @@ export function addProvider(preset: PresetKey = "blank"): Provider {
 export function removeProvider(id: string) {
   const i = settings.providers.findIndex((p) => p.id === id);
   if (i >= 0) settings.providers.splice(i, 1);
-  for (const r of [settings.narration, settings.dialogue, settings.stt]) if (r.providerId === id) r.providerId = null;
+  for (const r of [settings.narration, settings.dialogue, settings.stt])
+    if (r.providerId === id) r.providerId = null;
 }
 
 // ---------- chapters ----------
@@ -222,7 +272,10 @@ let undoEntry: { kind: "add" | "delete"; chapter: Chapter; index: number } | nul
  * Add a pasted chapter at the end.
  * Toasts are the caller's job (it knows about Rename/Undo buttons).
  */
-export function addChapter(rawIn: string | null | undefined): { status: "added" | "dup" | "empty"; chapter?: Chapter } {
+export function addChapter(rawIn: string | null | undefined): {
+  status: "added" | "dup" | "empty";
+  chapter?: Chapter;
+} {
   const raw = normalize(rawIn ?? "");
   if (!raw) return { status: "empty" };
   const dup = library.chapters.find((c) => c.raw === raw);
@@ -230,9 +283,20 @@ export function addChapter(rawIn: string | null | undefined): { status: "added" 
     ui.flashId = dup.id;
     return { status: "dup", chapter: dup };
   }
-  const { title, body } = autoTitle(raw, library.chapters.map((c) => c.title));
+  const { title, body } = autoTitle(
+    raw,
+    library.chapters.map((c) => c.title),
+  );
   const words = body.split(/\s+/).length;
-  library.chapters.push({ id: newId("c"), title, body, raw, addedAt: Date.now(), short: words < 40, pos: 0 });
+  library.chapters.push({
+    id: newId("c"),
+    title,
+    body,
+    raw,
+    addedAt: Date.now(),
+    short: words < 40,
+    pos: 0,
+  });
   const ch = library.chapters.at(-1)!;
   undoEntry = { kind: "add", chapter: ch, index: library.chapters.length - 1 };
   ui.flashId = ch.id;
@@ -257,7 +321,8 @@ export function deleteChapter(id: string): Chapter | undefined {
   if (index < 0) return;
   const [chapter] = library.chapters.splice(index, 1);
   undoEntry = { kind: "delete", chapter: chapter!, index };
-  if (ui.currentId === id) ui.currentId = (library.chapters[index] ?? library.chapters[index - 1])?.id ?? null;
+  if (ui.currentId === id)
+    ui.currentId = (library.chapters[index] ?? library.chapters[index - 1])?.id ?? null;
   return chapter;
 }
 
@@ -273,5 +338,6 @@ export function undo(): "add" | "delete" | null {
 function deleteChapterQuiet(id: string) {
   const i = library.chapters.findIndex((c) => c.id === id);
   if (i >= 0) library.chapters.splice(i, 1);
-  if (ui.currentId === id) ui.currentId = library.chapters[i - 1]?.id ?? library.chapters[0]?.id ?? null;
+  if (ui.currentId === id)
+    ui.currentId = library.chapters[i - 1]?.id ?? library.chapters[0]?.id ?? null;
 }

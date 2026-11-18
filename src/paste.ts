@@ -3,7 +3,8 @@ import { addChapter, docOf, toast, ui, undo } from "./store";
 
 export function addFromText(text: string | null | undefined) {
   const r = addChapter(text);
-  if (r.status === "empty") return toast({ title: "Nothing to add", sub: "The clipboard is empty" });
+  if (r.status === "empty")
+    return toast({ title: "Nothing to add", sub: "The clipboard is empty" });
   if (r.status === "dup") return toast({ title: "Already in the list", sub: r.chapter!.title });
   const ch = r.chapter!;
   const d = docOf(ch);
@@ -30,5 +31,10 @@ export async function pasteFromClipboard() {
 
 export function undoWithToast() {
   const k = undo();
-  toast(k ? { title: k === "add" ? "Chapter removed" : "Chapter restored" } : { title: "Nothing to undo" }, 3000);
+  toast(
+    k
+      ? { title: k === "add" ? "Chapter removed" : "Chapter restored" }
+      : { title: "Nothing to undo" },
+    3000,
+  );
 }

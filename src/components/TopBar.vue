@@ -1,1 +1,96 @@
-<template><div /></template>
+<script setup lang="ts">
+import { PanelLeft, Keyboard, Settings } from "@lucide/vue";
+import ReadingPopover from "./ReadingPopover.vue";
+import { ui, current } from "../store";
+
+defineEmits<{ side: [] }>();
+</script>
+
+<template>
+  <header class="top">
+    <button
+      class="ib"
+      data-side-toggle
+      title="Toggle chapters (B)"
+      aria-label="Toggle chapter list"
+      @click="$emit('side')"
+    >
+      <PanelLeft :size="16" :stroke-width="1.5" />
+    </button>
+    <div class="brand">lectern</div>
+    <div class="crumb">{{ ui.view === "settings" ? "Settings" : (current?.title ?? "") }}</div>
+    <div class="sp"></div>
+    <button
+      class="ib aa"
+      popovertarget="aa"
+      title="Reading settings (A)"
+      aria-label="Reading settings"
+    >
+      Aa
+    </button>
+    <button
+      class="ib"
+      title="Keyboard shortcuts (?)"
+      aria-label="Keyboard shortcuts"
+      @click="ui.shortcutsOpen = true"
+    >
+      <Keyboard :size="16" :stroke-width="1.5" />
+    </button>
+    <button
+      class="ib"
+      title="Settings (⌘,)"
+      aria-label="Settings"
+      @click="ui.view = ui.view === 'settings' ? 'reader' : 'settings'"
+    >
+      <Settings :size="16" :stroke-width="1.5" />
+    </button>
+    <ReadingPopover />
+  </header>
+</template>
+
+<style scoped>
+.top {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.brand {
+  font: 600 14px var(--ui);
+  letter-spacing: -0.01em;
+  color: var(--ink-hi);
+  padding: 0 6px 0 2px;
+}
+.brand::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 14px;
+  margin-right: 7px;
+  vertical-align: -2px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--acc), var(--dlg));
+}
+.crumb {
+  color: var(--ink2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+  min-width: 0;
+}
+.aa {
+  font: 600 13px var(--read);
+  width: auto;
+  padding: 0 8px;
+}
+@media (max-width: 820px) {
+  .crumb {
+    display: none;
+  }
+}
+</style>

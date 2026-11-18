@@ -29,7 +29,10 @@ for (const [p, smart, want] of cases) {
   );
 }
 
-assert.deepEqual(autoTitle("Chapter 3: Rain\n\nBody."), { title: "Chapter 3: Rain", body: "Body." });
+assert.deepEqual(autoTitle("Chapter 3: Rain\n\nBody."), {
+  title: "Chapter 3: Rain",
+  body: "Body.",
+});
 assert.equal(autoTitle("She ran. Fast.\nMore.", ["Chapter 4"]).title, "Chapter 5");
 
 const doc = buildDoc(`"Hi," she said.\n\nThe end.`);

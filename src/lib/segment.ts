@@ -64,8 +64,10 @@ export function segmentPara(p: string, smart = true): { kind: Kind; text: string
   cut(start, p.length, "narr");
   // a piece with nothing to say rides along with its neighbour: no empty TTS requests
   const out: typeof raw = [];
-  for (const s of raw)
-    speakable(s.text) || !out.length ? out.push(s) : ((out[out.length - 1]!.text += s.text));
+  for (const s of raw) {
+    if (speakable(s.text) || !out.length) out.push(s);
+    else out[out.length - 1]!.text += s.text;
+  }
   if (out.length > 1 && !speakable(out[0]!.text)) {
     out[1]!.text = out[0]!.text + out[1]!.text;
     out.shift();
@@ -122,7 +124,10 @@ export const normalize = (raw: string) =>
     .trim();
 
 /** First line becomes the title when it looks like a heading; else `Chapter N`. */
-export function autoTitle(text: string, existingTitles: string[] = []): { title: string; body: string } {
+export function autoTitle(
+  text: string,
+  existingTitles: string[] = [],
+): { title: string; body: string } {
   const nl = text.indexOf("\n");
   const first = (nl < 0 ? text : text.slice(0, nl)).trim();
   const rest = nl < 0 ? "" : text.slice(nl + 1).trim();
