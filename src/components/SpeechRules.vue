@@ -2,7 +2,7 @@
 // Settings › Spoken text: what the TTS is sent. The reader always shows the original.
 import { computed, ref } from "vue";
 import { Plus, RotateCcw, Search, X } from "@lucide/vue";
-import { settings, toast } from "../store";
+import { settings, toast, fillDefaultSpeech } from "../store";
 import { makeSpeaker } from "../lib/speech";
 import { DEFAULT_RULES } from "../lib/kaomoji";
 
@@ -30,14 +30,10 @@ function restore() {
   const have = new Set(rules.map((r) => r.find));
   const missing = DEFAULT_RULES.filter((r) => !have.has(r.find));
   rules.push(...missing.map((r) => ({ ...r })));
-  toast(
-    {
-      title: missing.length
-        ? `Restored ${missing.length} kaomoji`
-        : "All default kaomoji are already in the list",
-    },
-    3000,
-  );
+  const filled = fillDefaultSpeech();
+  const parts = [missing.length && `added ${missing.length}`, filled && `filled ${filled} blank`];
+  const msg = parts.filter(Boolean).join(", ");
+  toast({ title: msg ? `Defaults restored: ${msg}` : "Nothing to restore" }, 3000);
 }
 </script>
 
@@ -81,7 +77,11 @@ function restore() {
     </label>
     <span class="num">{{ shown.length }} of {{ rules.length }}</span>
     <span class="sp" />
-    <button class="btn ghost" title="Add back any default kaomoji you removed" @click="restore">
+    <button
+      class="btn ghost"
+      title="Add back default kaomoji you removed and fill blank speak-as words"
+      @click="restore"
+    >
       <RotateCcw :size="13" /> Restore defaults
     </button>
     <button class="btn" @click="add"><Plus :size="13" /> Add rule</button>

@@ -28,7 +28,7 @@ export interface Settings {
   dialogue: VoiceSetting & { same: boolean };
   stt: { enabled: boolean; providerId: string | null; model: string };
   /** text sent to TTS: replace rules, then automatic emoji/kaomoji removal */
-  speech: { auto: boolean; rules: Rule[] };
+  speech: { auto: boolean; rules: Rule[]; version?: number };
   smartQuotes: boolean;
   prefetch: number;
   /** silence between segments / paragraphs, in ms at 1.0x */
@@ -108,6 +108,8 @@ export const FONTS: Record<FontKey, { label: string; css: string }> = {
   sans: { label: "Geist Sans", css: `'Geist',system-ui,sans-serif` },
 };
 
+const SPEECH_VERSION = 2;
+
 const DEFAULTS: Settings = {
   providers: [],
   narration: { providerId: null, model: "", voice: "" },
@@ -115,7 +117,7 @@ const DEFAULTS: Settings = {
   stt: { enabled: true, providerId: null, model: "whisper-1" },
   smartQuotes: true,
   prefetch: 3,
-  speech: { auto: true, rules: DEFAULT_RULES },
+  speech: { auto: true, rules: DEFAULT_RULES }, // no version: old saves must not inherit it
   segmentGap: 0,
   paragraphGap: 300,
   speed: 1,
@@ -144,6 +146,22 @@ const stored = useLocalStorage<Settings>("lectern.settings", DEFAULTS, {
 });
 /** Persisted settings. Mutate in place; never reassign. */
 export const settings = stored.value;
+
+/** Fill default "speak as" words into rules saved before they existed (v1 had them blank). */
+export function fillDefaultSpeech(): number {
+  const word = new Map(DEFAULT_RULES.map((r) => [r.find, r.replace]));
+  let n = 0;
+  for (const r of settings.speech.rules)
+    if (!r.replace && word.get(r.find)) {
+      r.replace = word.get(r.find)!;
+      n++;
+    }
+  return n;
+}
+if ((settings.speech.version ?? 1) < SPEECH_VERSION) {
+  fillDefaultSpeech();
+  settings.speech.version = SPEECH_VERSION;
+}
 
 /** Transient UI state. */
 export const ui = reactive({

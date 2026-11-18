@@ -24,7 +24,11 @@ export function compileRules(rules: Rule[]): (text: string) => string {
     .sort((a, b) => b.length - a.length)
     .map((f) => (bounded(f) ? `(?<![\\p{L}\\p{N}])${esc(f)}(?![\\p{L}\\p{N}])` : esc(f)));
   const re = new RegExp(alts.join("|"), "giu");
-  return (t) => t.replace(re, (m) => map.get(m.toLowerCase()) ?? "");
+  return (t) =>
+    t.replace(re, (m) => {
+      const r = map.get(m.toLowerCase()) ?? "";
+      return r && !bounded(m) ? ` ${r} ` : r; // a face glued to a word must not merge into it
+    });
 }
 
 // ---------- automatic emoji / kaomoji removal ----------
@@ -76,5 +80,10 @@ export function stripFaces(text: string): string {
 /** Build the request-text function for a settings snapshot. */
 export function makeSpeaker(o: { auto: boolean; rules: Rule[] }): (text: string) => string {
   const rules = compileRules(o.rules);
-  return o.auto ? (t) => stripFaces(rules(t)) : (t) => rules(t).trim();
+  const tidy = (t: string) =>
+    t
+      .replace(/[ \t]{2,}/g, " ")
+      .replace(/\s+([,.!?;:…])/g, "$1")
+      .trim();
+  return o.auto ? (t) => stripFaces(rules(t)) : (t) => tidy(rules(t));
 }
