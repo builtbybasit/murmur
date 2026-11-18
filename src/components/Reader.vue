@@ -1,8 +1,17 @@
 <script setup lang="ts">
 // Reading view. The chapter text is rendered once per doc as an HTML string (30k word spans
 // would be too heavy as reactive vnodes); highlight classes are moved imperatively in paint().
-import { computed, ref, watch, onMounted, onBeforeUnmount } from "vue";
-import { ui, settings, current, currentDoc, library, CHARS_PER_SEC } from "../store";
+import { computed, ref, watch, nextTick, onMounted, onBeforeUnmount } from "vue";
+import {
+  ui,
+  settings,
+  current,
+  currentDoc,
+  library,
+  setChapterBody,
+  toast,
+  CHARS_PER_SEC,
+} from "../store";
 import { player, seek, nextChapter } from "../engine";
 
 const scroller = ref<HTMLElement | null>(null);
@@ -32,6 +41,43 @@ const html = computed(() => {
   }
   return out;
 });
+
+// ---------- editing the chapter text ----------
+const editing = computed(() => !!current.value && ui.editingId === current.value.id);
+const draft = ref("");
+const editor = ref<HTMLTextAreaElement | null>(null);
+watch(editing, async (on) => {
+  if (!on) return;
+  draft.value = current.value!.body;
+  await nextTick();
+  scroller.value?.scrollTo({ top: 0 });
+  editor.value?.focus();
+  editor.value?.setSelectionRange(0, 0);
+});
+watch(
+  () => ui.currentId,
+  (id) => {
+    if (ui.editingId && ui.editingId !== id) ui.editingId = null;
+  },
+);
+function saveEdit() {
+  if (!setChapterBody(current.value!.id, draft.value))
+    return toast({ title: "Chapter text can't be empty", warn: true });
+  ui.editingId = null;
+  toast(
+    {
+      title: "Chapter updated",
+      sub: "Changed paragraphs are generated again; the rest stay cached",
+    },
+    3500,
+  );
+}
+function onEditKey(e: KeyboardEvent) {
+  if (e.key === "Escape") ui.editingId = null;
+  else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) saveEdit();
+  else return;
+  e.preventDefault();
+}
 
 // ---------- meta + end card ----------
 const totalSec = computed(() => player.total || (doc.value ? doc.value.chars / CHARS_PER_SEC : 0));
@@ -215,8 +261,25 @@ function onClick(e: MouseEvent) {
           <span>about {{ mins }} min at {{ settings.speed.toFixed(1) }}×</span>
           <span>{{ cached }}</span>
         </div>
-        <div ref="textEl" class="text" @click="onClick" v-html="html" />
-        <button v-if="nextCh" class="endcard" @click="nextChapter()">
+        <div v-if="editing" class="edit">
+          <textarea
+            ref="editor"
+            v-model="draft"
+            spellcheck="false"
+            aria-label="Chapter text"
+            @keydown="onEditKey"
+          />
+          <div class="edit-bar">
+            <span>Blank lines separate paragraphs. Unchanged paragraphs keep their audio.</span>
+            <span class="sp" />
+            <button class="btn ghost" @click="ui.editingId = null">Cancel <kbd>Esc</kbd></button>
+            <button class="btn pri" @click="saveEdit">Save <kbd>⌘↵</kbd></button>
+          </div>
+        </div>
+        <!-- v-show, not v-if: paint() keeps references into this element -->
+        <div v-show="!editing" ref="textEl" class="text" @click="onClick" v-html="html" />
+        <template v-if="editing" />
+        <button v-else-if="nextCh" class="endcard" @click="nextChapter()">
           <span><small>Up next · plays automatically</small><b>{{ nextCh.title }}</b></span>
           <span class="sp" />
           <kbd>J</kbd>
@@ -228,7 +291,11 @@ function onClick(e: MouseEvent) {
         </div>
       </article>
     </section>
-    <button v-if="!ui.follow && player.started && doc" class="follow" @click="backToCurrent">
+    <button
+      v-if="!ui.follow && player.started && doc && !editing"
+      class="follow"
+      @click="backToCurrent"
+    >
       Back to current <kbd>F</kbd>
     </button>
   </div>
@@ -255,6 +322,38 @@ function onClick(e: MouseEvent) {
   font: var(--rs) / var(--rl) var(--read);
   color: var(--ink);
   font-optical-sizing: auto;
+}
+.edit textarea {
+  display: block;
+  width: 100%;
+  min-height: 60vh;
+  field-sizing: content;
+  resize: vertical;
+  padding: 12px 14px;
+  border: 1px solid var(--line2);
+  border-radius: var(--r2);
+  background: var(--raised);
+  font: inherit;
+  line-height: var(--rl);
+  color: var(--ink);
+}
+.edit textarea:focus {
+  outline: 2px solid var(--acc);
+  outline-offset: 1px;
+}
+.edit-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  background: var(--page);
+  font: 12px/1.45 var(--ui);
+  color: var(--ink3);
+}
+.edit-bar kbd {
+  margin-left: 2px;
 }
 .page h1 {
   font: 600 1.55em/1.2 var(--read);

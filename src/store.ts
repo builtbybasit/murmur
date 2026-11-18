@@ -148,6 +148,7 @@ export const ui = reactive({
   toast: null as Toast | null,
   flashId: null as string | null, // chapter row to flash
   renamingId: null as string | null, // chapter row in rename mode (Sidebar)
+  editingId: null as string | null, // chapter whose text is open in the editor (Reader)
 });
 
 /** Chapters, in list order. chapter = { id, title, body, raw, addedAt, short, pos } (pos = segment index). */
@@ -302,6 +303,16 @@ export function addChapter(rawIn: string | null | undefined): {
   ui.flashId = ch.id;
   if (!ui.currentId) ui.currentId = ch.id; // the very first chapter opens itself
   return { status: "added", chapter: ch };
+}
+
+/** Replace a chapter's text. Unchanged segments keep their cached audio (cache keys are per text). */
+export function setChapterBody(id: string, text: string): boolean {
+  const c = library.chapters.find((c) => c.id === id);
+  const body = normalize(text);
+  if (!c || !body) return false;
+  c.body = body;
+  c.short = body.split(/\s+/).length < 40;
+  return true;
 }
 
 export function renameChapter(id: string, title: string) {

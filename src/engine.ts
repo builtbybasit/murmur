@@ -708,6 +708,14 @@ export function prevChapter() {
 }
 
 /** Show a chapter in the reader and point the engine at it (at its saved position). */
+/** Open a chapter's text in the editor (Reader). Pauses playback; saving re-segments in place. */
+export function edit(id: string) {
+  pause();
+  if (ui.currentId !== id) open(id);
+  ui.view = "reader";
+  ui.editingId = id;
+}
+
 export function open(
   id: string,
   { autoplay = false, seg }: { autoplay?: boolean; seg?: number } = {},

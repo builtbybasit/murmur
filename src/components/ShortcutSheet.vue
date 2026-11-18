@@ -19,6 +19,7 @@ const KEYS: [string, string[]][] = [
   ["Reading settings", ["A"]],
   ["Settings", [M + ","]],
   ["Rename focused chapter", ["F2"]],
+  ["Edit chapter text", ["E"]],
   ["Move focused chapter", [ALT + "↑", ALT + "↓"]],
   ["Delete focused chapter", [MAC ? "⌫" : "Del"]],
   ["This sheet", ["?"]],

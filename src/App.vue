@@ -87,6 +87,10 @@ useEventListener(document, "keydown", (e: KeyboardEvent) => {
     case "r":
     case "R":
       return engine.retry();
+    case "e":
+    case "E":
+      if (ui.currentId) engine.edit(ui.currentId);
+      return;
     case "b":
     case "B":
       return toggleSide();

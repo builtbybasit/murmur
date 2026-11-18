@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
 import { onClickOutside, useMediaQuery } from "@vueuse/core";
-import { GripVertical, Pencil, Trash2 } from "@lucide/vue";
+import { FilePenLine, GripVertical, Pencil, Trash2 } from "@lucide/vue";
 import {
   settings,
   ui,
@@ -15,7 +15,7 @@ import {
   type Chapter,
 } from "../store";
 import { pasteFromClipboard, undoWithToast } from "../paste";
-import { player, open } from "../engine";
+import { player, open, edit } from "../engine";
 
 const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl+";
 const narrow = useMediaQuery("(max-width: 820px)");
@@ -44,6 +44,10 @@ onClickOutside(side, () => (ui.sidebarDrawer = false), {
 
 function openRow(id: string) {
   open(id);
+  if (narrow.value) ui.sidebarDrawer = false;
+}
+function openEditor(id: string) {
+  edit(id);
   if (narrow.value) ui.sidebarDrawer = false;
 }
 
@@ -210,6 +214,14 @@ function onRowKey(e: KeyboardEvent, c: Chapter, i: number) {
             @click.stop="ui.renamingId = c.id"
           >
             <Pencil :size="14" :stroke-width="1.5" />
+          </button>
+          <button
+            class="ib"
+            title="Edit text (E)"
+            aria-label="Edit text"
+            @click.stop="openEditor(c.id)"
+          >
+            <FilePenLine :size="14" :stroke-width="1.5" />
           </button>
           <button class="ib" title="Delete (⌫)" aria-label="Delete" @click.stop="del(c)">
             <Trash2 :size="14" :stroke-width="1.5" />
