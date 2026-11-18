@@ -54,6 +54,8 @@ export interface Player {
   error: PlayerError | null; // provider error at the current segment, else null
   skipped: Record<number, true>; // failed segments the user skipped
   stt: SttState;
+  /** voice id being auditioned in Settings, else null */
+  previewing: string | null;
 }
 export type { ProviderError };
 export { ApiError };
@@ -74,6 +76,7 @@ export const player = reactive<Player>({
   error: null,
   skipped: {},
   stt: freshStt(),
+  previewing: null,
 });
 
 const MAX_JOBS = 2; // concurrent segment requests (cache reads included, they are quick)
@@ -216,7 +219,8 @@ function refreshStatus() {
   else if (f) player.status = "error";
   else if (ended) player.status = "ended";
   else if (wantPlay)
-    player.status = loaded === player.seg && audio && !audio.paused ? "playing" : "buffering";
+    player.status =
+      gap || (loaded === player.seg && audio && !audio.paused) ? "playing" : "buffering";
   else player.status = player.started ? "paused" : "idle";
 }
 
@@ -284,6 +288,7 @@ function load(
   id: string | null,
   o: { seg?: number; autoplay?: boolean; keepStarted?: boolean } = {},
 ) {
+  endGap(false);
   const same = id === chId;
   wantPlay = false;
   ended = false;
@@ -495,6 +500,7 @@ function runRetry(i: number) {
 
 /** Move the playhead to segment i, word w. Keeps the play/pause intent. */
 function go(i: number, w = 0) {
+  endGap(false);
   ended = false;
   if (loaded >= 0 && loaded !== i) stopAudio();
   player.seg = i;
@@ -513,11 +519,28 @@ function go(i: number, w = 0) {
   kick();
 }
 
+// Pause between segments: the next segment waits gap ms (scaled by speed) after one ends.
+let gap: { timer: ReturnType<typeof setTimeout>; next: number } | null = null;
+function endGap(move: boolean) {
+  if (!gap) return;
+  clearTimeout(gap.timer);
+  const n = gap.next;
+  gap = null;
+  if (move) go(n);
+}
+
 function advance() {
   const n = segs().length;
   let i = player.seg + 1;
   while (i < n && player.skipped[i]) i++;
-  if (i < n) return go(i);
+  if (i < n) {
+    const newPara = segs()[i]!.para !== segs()[player.seg]!.para;
+    const ms = (newPara ? settings.paragraphGap : settings.segmentGap) / settings.speed;
+    if (ms <= 0) return go(i);
+    gap = { timer: setTimeout(() => endGap(true), ms), next: i };
+    kick(); // keeps fetching ahead during the pause
+    return;
+  }
   const next = chapterAt(1);
   if (next) return open(next.id, { autoplay: true, seg: 0 });
   stopAudio();
@@ -650,6 +673,7 @@ export function play() {
 }
 
 export function pause() {
+  endGap(true); // paused during a gap: land on the next segment, not replay the last one
   wantPlay = false;
   audio?.pause();
   savePos();
@@ -707,7 +731,6 @@ export function prevChapter() {
   if (c) open(c.id, { autoplay: wantPlay });
 }
 
-/** Show a chapter in the reader and point the engine at it (at its saved position). */
 /** Open a chapter's text in the editor (Reader). Pauses playback; saving re-segments in place. */
 export function edit(id: string) {
   pause();
@@ -716,6 +739,7 @@ export function edit(id: string) {
   ui.editingId = id;
 }
 
+/** Show a chapter in the reader and point the engine at it (at its saved position). */
 export function open(
   id: string,
   { autoplay = false, seg }: { autoplay?: boolean; seg?: number } = {},
@@ -774,8 +798,12 @@ export function setSpeed(v: number) {
 
 let previewEl: HTMLAudioElement | null = null;
 /** Speak a fixed sentence with a role's current voice. Throws ApiError on failure. */
-export async function preview(role: Role) {
-  const v = voiceFor(role === "dialogue" ? "dlg" : "narr");
+const previews = new Map<string, string>(); // provider|model|voice -> object URL
+
+/** Speak PREVIEW_TEXT with a role's provider and model; `voice` overrides the role's voice (audition, blends). */
+export async function preview(role: Role, voice?: string) {
+  const v = { ...voiceFor(role === "dialogue" ? "dlg" : "narr") };
+  if (voice) v.voice = voice;
   if (!v.provider)
     throw new ApiError({
       code: "http",
@@ -783,18 +811,36 @@ export async function preview(role: Role) {
       message: "Pick a provider first",
       retryAfter: null,
     });
-  const blob = await tts({
-    provider: v.provider,
-    model: v.model,
-    voice: v.voice,
-    input: PREVIEW_TEXT,
-  });
-  if (previewEl) {
-    previewEl.pause();
-    URL.revokeObjectURL(previewEl.src);
+  const key = [v.provider.baseUrl, v.model, v.voice].join("|");
+  stopPreview();
+  player.previewing = v.voice;
+  try {
+    let url = previews.get(key);
+    if (!url) {
+      const blob = await tts({
+        provider: v.provider,
+        model: v.model,
+        voice: v.voice,
+        input: PREVIEW_TEXT,
+      });
+      previews.set(key, (url = URL.createObjectURL(blob)));
+    }
+    if (player.previewing !== v.voice) return; // another audition started meanwhile
+    const a = (previewEl = new Audio(url));
+    a.onended = a.onpause = () => {
+      if (previewEl === a) player.previewing = null;
+    };
+    await a.play();
+  } catch (e) {
+    if (player.previewing === v.voice) player.previewing = null;
+    throw e;
   }
-  previewEl = new Audio(URL.createObjectURL(blob));
-  await previewEl.play();
+}
+
+export function stopPreview() {
+  previewEl?.pause();
+  previewEl = null;
+  player.previewing = null;
 }
 
 /** { segments, bytes } across all chapters */

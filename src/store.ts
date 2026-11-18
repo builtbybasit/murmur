@@ -27,6 +27,9 @@ export interface Settings {
   stt: { enabled: boolean; providerId: string | null; model: string };
   smartQuotes: boolean;
   prefetch: number;
+  /** silence between segments / paragraphs, in ms at 1.0x */
+  segmentGap: number;
+  paragraphGap: number;
   speed: number;
   reading: {
     font: FontKey;
@@ -108,6 +111,8 @@ const DEFAULTS: Settings = {
   stt: { enabled: true, providerId: null, model: "whisper-1" },
   smartQuotes: true,
   prefetch: 3,
+  segmentGap: 0,
+  paragraphGap: 300,
   speed: 1,
   reading: {
     font: "serif",

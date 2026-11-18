@@ -17,6 +17,7 @@ import {
 import { player, preview, cacheStats, clearCache, retry } from "../engine";
 import { testConnection, fetchVoices } from "../lib/api";
 import { segmentPara } from "../lib/segment";
+import VoicePicker from "./VoicePicker.vue";
 
 const TABS = [
   ["providers", "Providers"],
@@ -359,25 +360,17 @@ async function clear() {
                   spellcheck="false"
                 />
                 <small
-                  >Free text. Blends work when the server supports them, for example
-                  <code>af_heart:0.7,af_bella:0.3</code></small
+                  >Free text. Click a voice below to use it and hear it, or mix several with Blend
+                  voices (servers like Kokoro accept <code>af_heart:0.7,af_bella:0.3</code>).</small
                 >
               </label>
             </div>
-            <div class="sugg">
-              <button
-                v-for="x in providerById(settings[r.key].providerId)?.voices"
-                :key="x"
-                :class="{ on: x === settings[r.key].voice }"
-                @click="settings[r.key].voice = x"
-              >
-                {{ x }}
-              </button>
-              <small v-if="!providerById(settings[r.key].providerId)?.voices.length" class="h"
-                >No voice list for this provider. Type an id, or use Fetch voices under
-                Providers.</small
-              >
-            </div>
+            <VoicePicker
+              v-model="settings[r.key].voice"
+              :role="r.key"
+              :provider="providerById(settings[r.key].providerId)"
+              @error="msg[r.key] = { cls: 'bad', text: $event }"
+            />
             <div class="acts-row">
               <button class="btn" @click="doPreview(r.key)"><Play :size="13" /> Preview</button>
               <span class="res" :class="msg[r.key]?.cls">{{ msg[r.key]?.text }}</span>
@@ -470,6 +463,29 @@ async function clear() {
             />
             <small>Higher hides slow providers, lower wastes less when you skip around.</small>
           </label>
+        </div>
+        <div class="gaps">
+          <label
+            ><span>Pause between segments</span
+            ><input v-model.number="settings.segmentGap" type="range" min="0" max="800" step="25" />
+            <output>{{ settings.segmentGap }} ms</output></label
+          >
+          <label
+            ><span>Pause between paragraphs</span
+            ><input
+              v-model.number="settings.paragraphGap"
+              type="range"
+              min="0"
+              max="1500"
+              step="50"
+            />
+            <output>{{ settings.paragraphGap }} ms</output></label
+          >
+          <small class="h"
+            >Silence added after a segment ends, on top of what the voice already leaves. Segments
+            are the narration/dialogue switches inside a paragraph. Pauses shrink with playback
+            speed.</small
+          >
         </div>
       </template>
 
@@ -754,27 +770,36 @@ select:disabled,
   align-items: center;
   gap: 8px;
 }
-.sugg {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 8px;
+.gaps {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
 }
-.sugg button {
-  font: 11.5px var(--mono);
-  padding: 2px 7px;
-  border-radius: 999px;
-  border: 1px solid var(--line2);
+.gaps label {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr) 64px;
+  align-items: center;
+  gap: 10px;
+  font: 500 11.5px var(--ui);
   color: var(--ink2);
-  background: var(--raised);
 }
-.sugg button:hover {
-  color: var(--ink-hi);
-  border-color: var(--c);
+.gaps input {
+  width: 100%;
+  margin: 0;
+  accent-color: var(--acc);
 }
-.sugg button.on {
-  border-color: var(--c);
-  color: var(--c);
+.gaps output {
+  font: 12px var(--mono);
+  text-align: right;
+  color: var(--ink);
+}
+@media (max-width: 520px) {
+  .gaps label {
+    grid-template-columns: minmax(0, 1fr) 64px;
+  }
+  .gaps label span {
+    grid-column: 1/-1;
+  }
 }
 .segc {
   display: inline-flex;
