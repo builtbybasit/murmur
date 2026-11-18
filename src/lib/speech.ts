@@ -4,7 +4,11 @@
 export interface Rule {
   find: string;
   replace: string;
+  /** a face or emoji: spoken as `replace` + the suffix ("waving emoji") */
+  face?: boolean;
 }
+
+const VS = /\uFE0E|\uFE0F/g; // variation selectors: invisible, present or not at random
 
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const WORDISH = /^[\p{L}\p{N}][\p{L}\p{N}' -]*$/u;
@@ -13,19 +17,25 @@ const WORDISH = /^[\p{L}\p{N}][\p{L}\p{N}' -]*$/u;
  * One pass over the text, longest match first, so `(￣▽￣)ノ` wins over `(￣▽￣)`. Case-insensitive.
  * Word-like and ASCII finds (`Xianxia`, `:P`) need a non-letter on both sides, so `:/` leaves
  * `https://` alone; other finds (`(￣▽￣)ノ`) match anywhere, even glued to a word.
+ * Face rules with a "speak as" label get the suffix appended; an empty label skips the face.
  */
-export function compileRules(rules: Rule[]): (text: string) => string {
-  const list = rules.filter((r) => r.find.trim()).map((r) => ({ ...r, find: r.find.trim() }));
-  if (!list.length) return (t) => t;
+export function compileRules(rules: Rule[], suffix = ""): (text: string) => string {
+  const list = rules
+    .map((r) => ({ ...r, find: r.find.replace(VS, "").trim() }))
+    .filter((r) => r.find);
+  if (!list.length) return (t) => t.replace(VS, "");
   const map = new Map<string, string>();
-  for (const r of list) map.set(r.find.toLowerCase(), r.replace);
+  for (const r of list) {
+    const say = r.replace.trim();
+    map.set(r.find.toLowerCase(), r.face && say && suffix.trim() ? `${say} ${suffix.trim()}` : say);
+  }
   const bounded = (f: string) => WORDISH.test(f) || /^[\x20-\x7e]+$/.test(f);
   const alts = [...map.keys()]
     .sort((a, b) => b.length - a.length)
     .map((f) => (bounded(f) ? `(?<![\\p{L}\\p{N}])${esc(f)}(?![\\p{L}\\p{N}])` : esc(f)));
   const re = new RegExp(alts.join("|"), "giu");
   return (t) =>
-    t.replace(re, (m) => {
+    t.replace(VS, "").replace(re, (m) => {
       const r = map.get(m.toLowerCase()) ?? "";
       return r && !bounded(m) ? ` ${r} ` : r; // a face glued to a word must not merge into it
     });
@@ -78,8 +88,12 @@ export function stripFaces(text: string): string {
 }
 
 /** Build the request-text function for a settings snapshot. */
-export function makeSpeaker(o: { auto: boolean; rules: Rule[] }): (text: string) => string {
-  const rules = compileRules(o.rules);
+export function makeSpeaker(o: {
+  auto: boolean;
+  rules: Rule[];
+  suffix?: string;
+}): (text: string) => string {
+  const rules = compileRules(o.rules, o.suffix);
   const tidy = (t: string) =>
     t
       .replace(/[ \t]{2,}/g, " ")

@@ -40,16 +40,35 @@ assert.equal(r("x(￣▽￣)ノ y(￣▽￣)").replace(/\s+/g, " ").trim(), "x B
 assert.equal(r("xianxia, Xianxias"), "Shee-en-shah, Xianxias");
 assert.equal(r("hmm :/ https://a.b"), "hmm meh https://a.b");
 
-// defaults compile and clean a messy line; auto off keeps faces the list doesn't know
-const say = makeSpeaker({ auto: true, rules: DEFAULT_RULES });
-assert.equal(say("Hi (^_^)/ there ┐(￣ヘ￣)┌ friend"), "Hi hey! there meh friend");
-assert.equal(say("thanks(￣▽￣)ノ bye"), "thanks hey! bye"); // padded, not "thankshey!"
-assert.equal(say("Okay! (￣▽￣)ノ See you. ♡(>ᴗ•)"), "Okay! hey! See you. aww");
-assert.equal(say("Unknown face (ᗒᗣᗕ)՞ here"), "Unknown face here"); // not in list: auto-skipped
-assert.ok(
-  DEFAULT_RULES.every((r) => r.replace),
-  "every default face has a word",
+// defaults: label + suffix for listed faces/emoji, silent skip for the rest
+const say = makeSpeaker({ auto: true, rules: DEFAULT_RULES, suffix: "emoji" });
+assert.equal(
+  say("Hi (^_^)/ there ┐(￣ヘ￣)┌ friend"),
+  "Hi waving emoji there shrugging emoji friend",
 );
+assert.equal(say("thanks(￣▽￣)ノ bye"), "thanks waving emoji bye"); // padded, not glued
+assert.equal(
+  say("Okay! (￣▽￣)ノ See you. ♡(>ᴗ•)"),
+  "Okay! waving emoji See you. heart wink emoji",
+);
+assert.equal(say("(╯°□°)╯︵ ┻━┻ fine"), "table flip emoji fine"); // longest match wins over parts
+// emoji with and without VS16, with a skin tone
+assert.equal(
+  say("Great 😂👍🏽 job ❤️ and ❤ ok"),
+  "Great laughing crying emoji thumbs up emoji job heart emoji and heart emoji ok",
+);
+assert.equal(say("Unknown face (ᗒᗣᗕ)՞ here 🫠"), "Unknown face here"); // not listed: skipped
+// suffix only on face rules; empty suffix says only the label
+const mixed = [...DEFAULT_RULES, { find: "Xianxia", replace: "Shee-en-shah" }];
+assert.equal(
+  makeSpeaker({ auto: true, rules: mixed, suffix: "emoji" })("Xianxia (T_T)"),
+  "Shee-en-shah crying emoji",
+);
+assert.equal(makeSpeaker({ auto: true, rules: DEFAULT_RULES, suffix: "" })("(T_T)"), "crying");
 assert.equal(makeSpeaker({ auto: false, rules: [] })("a ♡ b"), "a ♡ b");
-assert.ok(DEFAULT_RULES.length > 150, "extensive list");
+assert.ok(DEFAULT_RULES.length > 400, "kaomoji + emoji");
+assert.ok(
+  DEFAULT_RULES.every((r) => r.replace && r.face),
+  "every default has a label and the suffix",
+);
 console.log("speech ok");

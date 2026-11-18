@@ -5,7 +5,7 @@ import { useLocalStorage, watchDebounced } from "@vueuse/core";
 import { get, set } from "idb-keyval";
 import { buildDoc, normalize, autoTitle, type Doc, type Kind } from "./lib/segment";
 import type { Rule } from "./lib/speech";
-import { DEFAULT_RULES } from "./lib/kaomoji";
+import { DEFAULT_RULES, V2_WORDS } from "./lib/kaomoji";
 
 export interface Provider {
   id: string;
@@ -28,7 +28,8 @@ export interface Settings {
   dialogue: VoiceSetting & { same: boolean };
   stt: { enabled: boolean; providerId: string | null; model: string };
   /** text sent to TTS: replace rules, then automatic emoji/kaomoji removal */
-  speech: { auto: boolean; rules: Rule[]; version?: number };
+  /** suffix: said after each face/emoji label ("waving emoji") */
+  speech: { auto: boolean; rules: Rule[]; suffix: string; version?: number };
   smartQuotes: boolean;
   prefetch: number;
   /** silence between segments / paragraphs, in ms at 1.0x */
@@ -108,7 +109,7 @@ export const FONTS: Record<FontKey, { label: string; css: string }> = {
   sans: { label: "Geist Sans", css: `'Geist',system-ui,sans-serif` },
 };
 
-const SPEECH_VERSION = 2;
+const SPEECH_VERSION = 3;
 
 const DEFAULTS: Settings = {
   providers: [],
@@ -117,7 +118,7 @@ const DEFAULTS: Settings = {
   stt: { enabled: true, providerId: null, model: "whisper-1" },
   smartQuotes: true,
   prefetch: 3,
-  speech: { auto: true, rules: DEFAULT_RULES }, // no version: old saves must not inherit it
+  speech: { auto: true, rules: DEFAULT_RULES, suffix: "emoji" }, // no version: old saves must not inherit it
   segmentGap: 0,
   paragraphGap: 300,
   speed: 1,
@@ -147,19 +148,31 @@ const stored = useLocalStorage<Settings>("lectern.settings", DEFAULTS, {
 /** Persisted settings. Mutate in place; never reassign. */
 export const settings = stored.value;
 
-/** Fill default "speak as" words into rules saved before they existed (v1 had them blank). */
-export function fillDefaultSpeech(): number {
-  const word = new Map(DEFAULT_RULES.map((r) => [r.find, r.replace]));
-  let n = 0;
-  for (const r of settings.speech.rules)
-    if (!r.replace && word.get(r.find)) {
-      r.replace = word.get(r.find)!;
-      n++;
+/**
+ * Bring saved rules up to the current defaults without touching user edits: default faces whose
+ * "speak as" is blank or still an old v2 word ("hey!") get the current label, and default rules
+ * missing from the list (new emoji) are added.
+ */
+export function upgradeSpeech(): { filled: number; added: number } {
+  const def = new Map(DEFAULT_RULES.map((r) => [r.find, r.replace]));
+  const rules = settings.speech.rules;
+  let filled = 0;
+  for (const r of rules) {
+    const label = def.get(r.find);
+    if (label == null) continue;
+    if (!r.replace || (V2_WORDS.has(r.replace) && r.replace !== label)) {
+      r.replace = label;
+      filled++;
     }
-  return n;
+    if (r.replace === label) r.face = true;
+  }
+  const have = new Set(rules.map((r) => r.find));
+  const missing = DEFAULT_RULES.filter((r) => !have.has(r.find));
+  rules.push(...missing.map((r) => ({ ...r })));
+  return { filled, added: missing.length };
 }
 if ((settings.speech.version ?? 1) < SPEECH_VERSION) {
-  fillDefaultSpeech();
+  upgradeSpeech();
   settings.speech.version = SPEECH_VERSION;
 }
 

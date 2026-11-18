@@ -2,13 +2,12 @@
 // Settings › Spoken text: what the TTS is sent. The reader always shows the original.
 import { computed, ref } from "vue";
 import { Plus, RotateCcw, Search, X } from "@lucide/vue";
-import { settings, toast, fillDefaultSpeech } from "../store";
+import { settings, toast, upgradeSpeech } from "../store";
 import { makeSpeaker } from "../lib/speech";
-import { DEFAULT_RULES } from "../lib/kaomoji";
 
 const rules = settings.speech.rules;
 const sample = ref(
-  `"See you tomorrow!" (￣▽￣)ノ she waved.\nHe blushed ♡(>ᴗ•) and flipped the table (╯°□°)╯︵ ┻━┻ 😅`,
+  `"See you tomorrow!" (￣▽￣)ノ she waved.\nHe blushed ♡(>ᴗ•) and flipped the table (╯°□°)╯︵ ┻━┻ 😂👍🏽 ❤️ ✦`,
 );
 const spoken = computed(() => makeSpeaker(settings.speech)(sample.value));
 
@@ -27,13 +26,12 @@ function add() {
   rules.unshift({ find: "", replace: "" });
 }
 function restore() {
-  const have = new Set(rules.map((r) => r.find));
-  const missing = DEFAULT_RULES.filter((r) => !have.has(r.find));
-  rules.push(...missing.map((r) => ({ ...r })));
-  const filled = fillDefaultSpeech();
-  const parts = [missing.length && `added ${missing.length}`, filled && `filled ${filled} blank`];
-  const msg = parts.filter(Boolean).join(", ");
-  toast({ title: msg ? `Defaults restored: ${msg}` : "Nothing to restore" }, 3000);
+  const { filled, added } = upgradeSpeech();
+  const parts = [added && `added ${added}`, filled && `filled ${filled}`].filter(Boolean);
+  toast(
+    { title: parts.length ? `Defaults restored: ${parts.join(", ")}` : "Nothing to restore" },
+    3000,
+  );
 }
 </script>
 
@@ -44,14 +42,23 @@ function restore() {
     here only regenerates the segments it affects.
   </p>
 
+  <label class="sfx-field"
+    ><span>Say after each emoji or kaomoji</span
+    ><input v-model="settings.speech.suffix" type="text" placeholder="nothing" spellcheck="false" />
+    <small
+      >Faces in the list below are read as their label plus this word, so
+      <code>(￣▽￣)ノ</code> becomes “waving {{ settings.speech.suffix.trim() }}” and listeners can
+      tell it apart from the story. Leave empty to say only the label.</small
+    ></label
+  >
+
   <label class="sw"
-    ><input v-model="settings.speech.auto" type="checkbox" /> Skip emoji and kaomoji
-    automatically</label
+    ><input v-model="settings.speech.auto" type="checkbox" /> Skip other emoji and kaomoji
+    silently</label
   >
   <p class="hint tight">
-    Removes emoji and face-like runs such as <code>(￣▽￣)ノ</code> or <code>♡(&gt;ᴗ•)</code> before
-    speaking. Words, numbers and normal punctuation are left alone. Turn it off for Chinese or
-    Japanese text.
+    Emoji and face-like runs that are not in the list are removed before speaking. Words, numbers
+    and normal punctuation are left alone. Turn it off for Chinese or Japanese text.
   </p>
 
   <div class="try">
@@ -68,7 +75,8 @@ function restore() {
   <p class="hint tight">
     Applied first, longest match first. Word-like entries match whole words, ignoring case (<code
       >Xianxia → Shee-en-shah</code
-    >); faces and symbols match anywhere. Leave “speak as” empty to skip it.
+    >); faces and symbols match anywhere. Leave “speak as” empty to skip it. The pill adds the
+    suffix to that rule.
   </p>
   <div class="bar">
     <label class="filter">
@@ -87,7 +95,7 @@ function restore() {
     <button class="btn" @click="add"><Plus :size="13" /> Add rule</button>
   </div>
   <div class="rules">
-    <div class="head"><span>Find</span><span>Speak as</span><span /></div>
+    <div class="head"><span>Find</span><span>Speak as</span><span>Suffix</span><span /></div>
     <div v-for="{ r, i } in shown" :key="i" class="rule">
       <input
         v-model="r.find"
@@ -103,6 +111,15 @@ function restore() {
         placeholder="(skip)"
         aria-label="Speak as"
       />
+      <button
+        class="pill"
+        :class="{ on: r.face }"
+        :aria-pressed="!!r.face"
+        :title="r.face ? 'Suffix is said after this' : 'Add the suffix after this'"
+        @click="r.face = !r.face"
+      >
+        {{ settings.speech.suffix.trim() || "suffix" }}
+      </button>
       <button class="ib" title="Remove" aria-label="Remove rule" @click="rules.splice(i, 1)">
         <X :size="13" />
       </button>
@@ -216,10 +233,49 @@ textarea {
   display: grid;
   gap: 4px;
 }
+.sfx-field {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 14px;
+  font: 500 11.5px var(--ui);
+  color: var(--ink2);
+}
+.sfx-field input {
+  width: min(240px, 100%);
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line2);
+  border-radius: var(--r2);
+  background: var(--raised);
+  font: 12.5px var(--mono);
+  color: var(--ink);
+}
+.sfx-field small {
+  font: 400 11.5px/1.4 var(--ui);
+  color: var(--ink3);
+  max-width: 70ch;
+}
+.pill {
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px dashed var(--line2);
+  font: 11px var(--mono);
+  color: var(--ink3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pill.on {
+  border-style: solid;
+  border-color: var(--acc);
+  color: var(--acc);
+  background: color-mix(in srgb, var(--acc) 11%, transparent);
+}
 .head,
 .rule {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 24px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 72px 24px;
   gap: 8px;
   align-items: center;
 }
