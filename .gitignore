@@ -25,3 +25,6 @@ dist-ssr
 
 .playwright-mcp
 tests
+
+# local env, may hold paths or secrets
+.env

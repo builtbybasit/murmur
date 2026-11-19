@@ -28,6 +28,10 @@ import { renderUnicodeCompact } from "uqr";
 import { openPhoneDoor, VIA } from "./phone-door";
 import { applyOp, type Chapter, type Library, type Op } from "../src/lib/ops";
 
+// .env (see .env.example): vp dev runs under Node, which does not load it by itself.
+// Variables already set in the shell win.
+if (existsSync(".env")) process.loadEnvFile(".env");
+
 // Paths are resolved on first use, so loading the config (lint, format) touches nothing.
 let dataDir: string | undefined;
 export const DATA = () => (dataDir ??= process.env.MURMUR_DATA ?? homeData());
