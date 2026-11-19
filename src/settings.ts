@@ -186,6 +186,23 @@ export function rolesOf(id: string): (Role | "alignment")[] {
 
 export const hasTts = computed(() => !!voiceFor("narr").provider);
 
+/** After a role's provider changes: take that provider's first model and voice. */
+export function providerChanged(role: Role) {
+  const v = settings[role];
+  const p = providerById(v.providerId);
+  if (p) Object.assign(v, { model: p.models[0] ?? v.model, voice: p.voices[0] ?? "" });
+}
+
+/** Dialogue/system: read by the narration voice, or a separate one (starting as a copy of narration). */
+export function setSame(role: "dialogue" | "system", same: boolean) {
+  const d = settings[role];
+  d.same = same;
+  if (!same && !d.providerId) {
+    const { providerId, model, voice } = settings.narration;
+    Object.assign(d, { providerId, model, voice });
+  }
+}
+
 export function addProvider(preset: PresetKey = "blank"): Provider {
   const p = PRESETS[preset];
   const prov: Provider = {
