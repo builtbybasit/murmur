@@ -59,6 +59,8 @@ export interface Chapter {
   short: boolean;
   /** saved segment index */
   pos: number;
+  /** all audio was generated for these voice settings (engine's audioSig) */
+  ready?: string;
 }
 export interface ToastAction {
   label: string;
@@ -368,6 +370,7 @@ export function setChapterBody(id: string, text: string): boolean {
   if (!c || !body) return false;
   c.body = body;
   c.short = body.split(/\s+/).length < 40;
+  delete c.ready; // changed text: some segments need audio again
   return true;
 }
 

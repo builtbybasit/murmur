@@ -12,6 +12,7 @@ import {
   providerById,
   CHARS_PER_SEC,
   toast,
+  type Chapter,
   type Provider,
   type Role,
 } from "./store";
@@ -763,6 +764,26 @@ function refresh() {
 
 // ---------- generate whole chapters in the background ----------
 
+/** Everything that changes a chapter's cache keys: voices, spoken-text rules, quote rule. */
+export const audioSig = computed(() =>
+  cache.cacheKey(
+    "sig",
+    "",
+    "",
+    JSON.stringify([
+      (["narr", "dlg", "sys"] as const).map((k) => {
+        const v = voiceFor(k);
+        return [v.provider?.baseUrl, v.model, v.voice];
+      }),
+      settings.speech,
+      settings.smartQuotes,
+    ]),
+  ),
+);
+/** queued | running | failed | done, or null: "done" survives reloads via chapter.ready. */
+export const genState = (c: Chapter) =>
+  generating[c.id]?.state ?? (c.ready === audioSig.value ? "done" : null);
+
 export interface GenJob {
   state: "queued" | "running" | "done" | "failed";
   done: number; // segments ready (audio, and word timings when alignment is on)
@@ -826,6 +847,7 @@ async function genLoop() {
     try {
       await genChapter(c.id, docOf(c), j, ac.signal);
       j.state = "done";
+      c.ready = audioSig.value;
     } catch (e) {
       if (!ac.signal.aborted) {
         Object.assign(j, { state: "failed", error: toPlain(e).message });

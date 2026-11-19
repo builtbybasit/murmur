@@ -14,7 +14,7 @@ import {
 } from "../store";
 import type { Seg, Word } from "../lib/segment";
 import { imageUrl } from "../lib/images";
-import { player, seek, nextChapter, generating, toggleGenerate } from "../engine";
+import { player, seek, nextChapter, genState, toggleGenerate } from "../engine";
 
 const scroller = ref<HTMLElement | null>(null);
 const textEl = ref<HTMLElement | null>(null);
@@ -134,7 +134,7 @@ const cached = computed(() => {
     all = doc.value?.segs.length ?? 0;
   return n === 0 ? "nothing generated yet" : n >= all ? "fully cached" : `${n} of ${all} cached`;
 });
-const job = computed(() => (current.value ? generating[current.value.id] : undefined));
+const job = computed(() => (current.value ? genState(current.value) : null));
 const nextCh = computed(() => {
   const i = library.chapters.findIndex((c) => c.id === ui.currentId);
   return i < 0 ? null : (library.chapters[i + 1] ?? null);
@@ -325,14 +325,14 @@ function onClick(e: MouseEvent) {
           <span>about {{ mins }} min at {{ settings.speed.toFixed(1) }}×</span>
           <span>{{ cached }}</span>
           <button
-            v-if="job?.state === 'running' || job?.state === 'queued'"
+            v-if="job === 'running' || job === 'queued'"
             class="lnk"
             @click="toggleGenerate(current.id)"
           >
-            {{ job.state === "queued" ? "waiting to generate · cancel" : "generating · stop" }}
+            {{ job === "queued" ? "waiting to generate · cancel" : "generating · stop" }}
           </button>
           <button
-            v-else-if="job?.state !== 'done' && player.cachedCount < doc.segs.length"
+            v-else-if="job !== 'done' && player.cachedCount < doc.segs.length"
             class="lnk"
             title="Generate audio for every segment in the background"
             @click="toggleGenerate(current.id)"

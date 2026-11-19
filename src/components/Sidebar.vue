@@ -25,7 +25,7 @@ import {
   type Chapter,
 } from "../store";
 import { pasteFromClipboard, undoWithToast } from "../paste";
-import { player, open, edit, generating, toggleGenerate } from "../engine";
+import { player, open, edit, generating, genState, toggleGenerate } from "../engine";
 
 const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl+";
 const narrow = useMediaQuery("(max-width: 820px)");
@@ -46,14 +46,14 @@ const pct = (c: Chapter) => {
   return n ? Math.min(100, Math.round((100 * c.pos) / n)) : 0;
 };
 const RING = 2 * Math.PI * 6; // progress ring circumference (r = 6)
-function genTitle(id: string) {
-  const j = generating[id]!;
+function genTitle(c: Chapter) {
+  const j = generating[c.id] ?? { done: 0, total: 0, error: "" };
   return {
     queued: "Waiting to generate audio. Click to cancel.",
     running: `Generating audio: ${j.done} of ${j.total} segments. Click to stop; finished segments stay.`,
     failed: `Audio generation stopped: ${j.error}. Click to try again.`,
-    done: "Audio ready for the whole chapter.",
-  }[j.state];
+    done: "Audio ready for the whole chapter. Click to check again.",
+  }[genState(c)!];
 }
 
 const rowEl = (id: string) => list.value?.querySelector<HTMLElement>(`[data-id="${id}"]`);
@@ -303,15 +303,15 @@ function pickEpub(e: Event) {
         >
         <span v-if="c.short" class="short">short</span>
         <button
-          v-if="generating[c.id]"
+          v-if="genState(c)"
           class="gen"
-          :class="generating[c.id]!.state"
-          :title="genTitle(c.id)"
-          :aria-label="genTitle(c.id)"
+          :class="genState(c)"
+          :title="genTitle(c)"
+          :aria-label="genTitle(c)"
           @click.stop="toggleGenerate(c.id)"
         >
           <svg
-            v-if="generating[c.id]!.state === 'running'"
+            v-if="genState(c) === 'running'"
             viewBox="0 0 16 16"
             width="14"
             height="14"
@@ -326,14 +326,14 @@ function pickEpub(e: Event) {
               transform="rotate(-90 8 8)"
             />
           </svg>
-          <Clock v-else-if="generating[c.id]!.state === 'queued'" :size="13" />
-          <TriangleAlert v-else-if="generating[c.id]!.state === 'failed'" :size="13" />
+          <Clock v-else-if="genState(c) === 'queued'" :size="13" />
+          <TriangleAlert v-else-if="genState(c) === 'failed'" :size="13" />
           <CircleCheck v-else :size="13" />
         </button>
         <span class="m num">{{ mins(c) }}m</span>
         <span class="acts">
           <button
-            v-if="!generating[c.id]"
+            v-if="!genState(c)"
             class="ib"
             title="Generate audio for the whole chapter, in the background"
             aria-label="Generate audio"
