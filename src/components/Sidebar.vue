@@ -1,17 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, watch } from "vue";
 import { onClickOutside, onKeyStroke } from "@vueuse/core";
-import {
-  ChevronRight,
-  CircleCheck,
-  Clock,
-  Download,
-  FilePenLine,
-  GripVertical,
-  Trash2,
-  TriangleAlert,
-  X,
-} from "@lucide/vue";
+import { ChevronRight, Download, FilePenLine, GripVertical, Trash2, X } from "@lucide/vue";
 import { settings, device } from "../settings";
 import {
   library,
@@ -26,10 +16,14 @@ import {
   type Chapter,
 } from "../library";
 import { ui, toast, edit, narrow } from "../ui";
-import { MOD, minutes, plural, thousands } from "../lib/format";
-import { pasteFromClipboard, undoWithToast } from "../paste";
+import { minutes, plural, thousands } from "../lib/format";
+import { groupBooks, type Head } from "../lib/books";
+import { undoWithToast } from "../paste";
 import { player, open } from "../engine";
-import { generating, genState, generateMany, toggleGenerate } from "../generate";
+import { genState, generateMany, toggleGenerate } from "../generate";
+import InlineRename from "./InlineRename.vue";
+import GenBadge from "./GenBadge.vue";
+import PasteSlot from "./PasteSlot.vue";
 
 const side = ref<HTMLElement>();
 const list = ref<HTMLElement>();
@@ -40,24 +34,17 @@ const meta = computed(() => {
     ? `${n} · ${thousands(library.chapters.reduce((s, c) => s + docOf(c).words, 0))} words`
     : "none yet";
 });
-const mins = (c: Chapter) => minutes(docOf(c).chars / CHARS_PER_SEC, settings.speed);
+const secs = (c: Chapter) => docOf(c).chars / CHARS_PER_SEC;
+const mins = (c: Chapter) => minutes(secs(c), settings.speed);
 const pct = (c: Chapter) => {
   const n = docOf(c).segs.length;
   return n ? Math.min(100, Math.round((100 * (library.positions[c.id] ?? 0)) / n)) : 0;
 };
-const RING = 2 * Math.PI * 6; // progress ring circumference (r = 6)
-function genTitle(c: Chapter) {
-  const j = generating[c.id] ?? { done: 0, total: 0, error: "" };
-  return {
-    queued: "Waiting to generate audio. Click to cancel.",
-    running: `Generating audio: ${j.done} of ${j.total} segments. Click to stop; finished segments stay.`,
-    failed: `Audio generation stopped: ${j.error}. Click to try again.`,
-    done: "Audio ready for the whole chapter. Click to check again.",
-  }[genState(c)!];
-}
 
 const rowEl = (id: string) => list.value?.querySelector<HTMLElement>(`[data-id="${id}"]`);
 const focusRow = (id?: string) => id && nextTick(() => rowEl(id)?.focus());
+const focusSibling = (el: HTMLElement, up: boolean) =>
+  ((up ? el.previousElementSibling : el.nextElementSibling) as HTMLElement | null)?.focus();
 
 onClickOutside(side, () => (ui.sidebarDrawer = false), {
   ignore: ["[data-side-toggle]", ".toast"],
@@ -66,44 +53,10 @@ onClickOutside(side, () => (ui.sidebarDrawer = false), {
 // ---- multi-select: Shift-click = range from the open (or last clicked) chapter, ⌘/Ctrl-click = toggle ----
 const sel = reactive(new Set<string>());
 let anchor: string | null = null;
-// ---- books: consecutive chapters with the same `book` form a group under a folding header ----
-interface Head {
-  kind: "head";
-  book: string;
-  ids: string[];
-  secs: number;
-  key: string;
-}
-interface Row {
-  kind: "row";
-  c: Chapter;
-  i: number; // index in library.chapters
-  n: number; // number within its group
-}
+
+// ---- books ----
 const folded = (b: string) => settings.collapsed.includes(b);
-const items = computed(() => {
-  const out: (Head | Row)[] = [];
-  let prev: string | null = null;
-  let head: Head | null = null;
-  let n = 0;
-  for (let i = 0; i < library.chapters.length; i++) {
-    const c = library.chapters[i]!;
-    const b = c.book ?? "";
-    if (b !== prev) {
-      prev = b;
-      n = 0;
-      head = b ? { kind: "head", book: b, ids: [], secs: 0, key: "h:" + c.id } : null;
-      if (head) out.push(head);
-    }
-    n++;
-    if (head) {
-      head.ids.push(c.id);
-      head.secs += docOf(c).chars / CHARS_PER_SEC;
-    }
-    if (!head || !folded(b)) out.push({ kind: "row", c, i, n });
-  }
-  return out;
-});
+const items = computed(() => groupBooks(library.chapters, folded, secs));
 function toggleFold(b: string) {
   settings.collapsed = folded(b)
     ? settings.collapsed.filter((x) => x !== b)
@@ -119,13 +72,6 @@ function bookGenerate(h: Head) {
   toast({ title: `Generating audio for ${plural(n, "chapter")}`, sub: h.book }, 3000);
 }
 const renamingBook = ref<string | null>(null);
-watch(renamingBook, async (b) => {
-  if (!b) return;
-  await nextTick();
-  const inp = list.value?.querySelector<HTMLInputElement>(".book input");
-  inp?.focus();
-  inp?.select();
-});
 function endBookRename(from: string, to: string | null) {
   if (renamingBook.value !== from) return;
   renamingBook.value = null;
@@ -133,12 +79,11 @@ function endBookRename(from: string, to: string | null) {
 }
 function onHeadKey(e: KeyboardEvent, h: Head) {
   if (e.target !== e.currentTarget) return;
-  const k = e.key,
-    el = e.currentTarget as HTMLElement;
+  const k = e.key;
   if (k === "Enter" || k === " ") toggleFold(h.book);
   else if (k === "F2") renamingBook.value = h.book;
   else if (k === "ArrowUp" || k === "ArrowDown")
-    ((k === "ArrowUp" ? el.previousElementSibling : el.nextElementSibling) as HTMLElement)?.focus();
+    focusSibling(e.currentTarget as HTMLElement, k === "ArrowUp");
   else return;
   e.preventDefault();
 }
@@ -210,21 +155,17 @@ watch(
   },
 );
 
-// ---- rename (also started by the paste toast) ----
+// ---- rename (also started by the paste toast): the list must be on screen ----
 watch(
   () => ui.renamingId,
-  async (id) => {
+  (id) => {
     if (!id) return;
     device.sidebarOpen = true;
     if (narrow.value) ui.sidebarDrawer = true;
-    await nextTick();
-    const inp = list.value?.querySelector("input");
-    inp?.focus();
-    inp?.select();
   },
 );
 function endRename(id: string, value: string | null) {
-  if (ui.renamingId !== id) return; // Enter/Esc already ended it; this is the blur that follows
+  if (ui.renamingId !== id) return; // another rename started; this is the old input's blur
   if (value !== null) renameChapter(id, value);
   ui.renamingId = null;
   focusRow(id);
@@ -239,7 +180,6 @@ function removeChapters(cs: Chapter[]) {
     actions: [{ label: "Undo", run: undoWithToast }],
   });
 }
-const del = (c: Chapter) => removeChapters([c]);
 
 // ---- drag to reorder ----
 const dragId = ref<string | null>(null);
@@ -313,31 +253,21 @@ function onDragEnd() {
 // ---- row keys; handled keys are preventDefault'ed so App's global map skips them ----
 function onRowKey(e: KeyboardEvent, c: Chapter, i: number) {
   if (e.target !== e.currentTarget) return;
-  const k = e.key,
-    row = e.currentTarget as HTMLElement;
-  if (e.altKey && (k === "ArrowUp" || k === "ArrowDown")) {
-    const up = k === "ArrowUp";
+  const k = e.key;
+  const up = k === "ArrowUp";
+  if (e.altKey && (up || k === "ArrowDown")) {
     const n = library.chapters[i + (up ? -1 : 1)];
     if (n) moveChapters([c.id], n.id, !up);
     focusRow(c.id);
-  } else if (k === "ArrowUp" || k === "ArrowDown") {
-    (
-      (k === "ArrowUp" ? row.previousElementSibling : row.nextElementSibling) as HTMLElement | null
-    )?.focus();
-  } else if (k === "Enter") openRow(c.id);
+  } else if (up || k === "ArrowDown") focusSibling(e.currentTarget as HTMLElement, up);
+  else if (k === "Enter") openRow(c.id);
   else if (k === "F2") ui.renamingId = c.id;
   else if ((k === "Delete" || k === "Backspace") && sel.has(c.id) && sel.size > 1) bulkDelete();
   else if (k === "Delete" || k === "Backspace") {
-    del(c);
+    removeChapters([c]);
     focusRow((library.chapters[i] ?? library.chapters.at(-1))?.id);
   } else return;
   e.preventDefault();
-}
-
-function pickEpub(e: Event) {
-  const input = e.target as HTMLInputElement;
-  if (input.files?.[0]) ui.epubFile = input.files[0];
-  input.value = ""; // the same file can be picked again
 }
 </script>
 
@@ -369,19 +299,11 @@ function pickEpub(e: Event) {
           @dragend="onDragEnd"
         >
           <ChevronRight class="chev" :size="13" />
-          <input
+          <InlineRename
             v-if="renamingBook === it.book"
-            class="t"
-            type="text"
             :value="it.book"
-            aria-label="Book name"
-            @click.stop
-            @keydown.stop="
-              $event.key === 'Enter' &&
-                endBookRename(it.book, ($event.target as HTMLInputElement).value);
-              $event.key === 'Escape' && endBookRename(it.book, null);
-            "
-            @blur="endBookRename(it.book, ($event.target as HTMLInputElement).value)"
+            label="Book name"
+            @done="endBookRename(it.book, $event)"
           />
           <span v-else class="t" @dblclick.stop="renamingBook = it.book">{{ it.book }}</span>
           <span class="m num">{{ it.ids.length }} · {{ dur(it.secs) }}</span>
@@ -432,19 +354,11 @@ function pickEpub(e: Event) {
             ></i>
             <template v-else>{{ String(it.n).padStart(2, "0") }}</template>
           </span>
-          <input
+          <InlineRename
             v-if="ui.renamingId === it.c.id"
-            class="t"
-            type="text"
             :value="it.c.title"
-            aria-label="Chapter title"
-            @click.stop
-            @keydown.stop="
-              $event.key === 'Enter' &&
-                endRename(it.c.id, ($event.target as HTMLInputElement).value);
-              $event.key === 'Escape' && endRename(it.c.id, null);
-            "
-            @blur="endRename(it.c.id, ($event.target as HTMLInputElement).value)"
+            label="Chapter title"
+            @done="endRename(it.c.id, $event)"
           />
           <span
             v-else
@@ -454,29 +368,7 @@ function pickEpub(e: Event) {
             >{{ it.c.title }}</span
           >
           <span v-if="isShort(it.c)" class="short">short</span>
-          <button
-            v-if="genState(it.c)"
-            class="gen"
-            :class="genState(it.c)"
-            :title="genTitle(it.c)"
-            :aria-label="genTitle(it.c)"
-            @click.stop="toggleGenerate(it.c.id)"
-          >
-            <svg v-if="genState(it.c) === 'running'" viewBox="0 0 16 16" width="14" height="14">
-              <circle cx="8" cy="8" r="6" class="track" />
-              <circle
-                cx="8"
-                cy="8"
-                r="6"
-                class="bar"
-                :stroke-dasharray="`${(RING * generating[it.c.id]!.done) / Math.max(1, generating[it.c.id]!.total)} ${RING}`"
-                transform="rotate(-90 8 8)"
-              />
-            </svg>
-            <Clock v-else-if="genState(it.c) === 'queued'" :size="13" />
-            <TriangleAlert v-else-if="genState(it.c) === 'failed'" :size="13" />
-            <CircleCheck v-else :size="13" />
-          </button>
+          <GenBadge :c="it.c" />
           <span class="m num">{{ mins(it.c) }}m</span>
           <span class="acts">
             <button
@@ -496,7 +388,12 @@ function pickEpub(e: Event) {
             >
               <FilePenLine :size="14" :stroke-width="1.5" />
             </button>
-            <button class="ib" title="Delete (⌫)" aria-label="Delete" @click.stop="del(it.c)">
+            <button
+              class="ib"
+              title="Delete (⌫)"
+              aria-label="Delete"
+              @click.stop="removeChapters([it.c])"
+            >
               <Trash2 :size="14" :stroke-width="1.5" />
             </button>
           </span>
@@ -525,22 +422,7 @@ function pickEpub(e: Event) {
         <X :size="14" />
       </button>
     </div>
-    <div v-else class="slot">
-      <div class="slot-t"><span>Paste next chapter</span><kbd>{{ MOD }}V</kbd></div>
-      <div class="slot-s">
-        Works anywhere in the app. One chapter per paste; the title comes from its first line.
-      </div>
-      <div class="slot-b">
-        <button class="btn" @click="pasteFromClipboard">Paste from clipboard</button>
-        <label class="btn" title="Import chapters from an EPUB book (or drop the file anywhere)"
-          >Import EPUB<input
-            type="file"
-            accept=".epub,application/epub+zip"
-            hidden
-            @change="pickEpub"
-        /></label>
-      </div>
-    </div>
+    <PasteSlot v-else />
   </aside>
 </template>
 
@@ -724,38 +606,6 @@ input.t {
 .row:focus-within .m {
   display: none;
 }
-.gen {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  color: var(--ink3);
-}
-.gen:hover {
-  background: var(--raised);
-}
-.gen.running {
-  color: var(--acc);
-}
-.gen.failed {
-  color: var(--err);
-}
-.gen.done {
-  color: var(--ok);
-}
-.gen circle {
-  fill: none;
-  stroke-width: 2.2;
-}
-.gen .track {
-  stroke: var(--line2);
-}
-.gen .bar {
-  stroke: currentColor;
-  stroke-linecap: round;
-  transition: stroke-dasharray 0.3s;
-}
 .acts .ib {
   width: 24px;
   height: 24px;
@@ -820,30 +670,6 @@ input.t {
   50% {
     height: 10px;
   }
-}
-.slot {
-  margin: 8px;
-  padding: 10px;
-  border: 1px dashed var(--line2);
-  border-radius: var(--r3);
-  background: var(--bg);
-}
-.slot-t {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-weight: 500;
-  color: var(--ink-hi);
-}
-.slot-s {
-  color: var(--ink3);
-  font-size: 11.5px;
-  margin: 2px 0 8px;
-}
-.slot-b {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
 }
 @media (max-width: 820px) {
   .side,

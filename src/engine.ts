@@ -53,7 +53,8 @@ interface Player {
   elapsed: number; // seconds into the chapter (known durations + estimates), at 1.0x
   total: number; // estimated chapter length in seconds at 1.0x
   totalExact: boolean; // true once every segment's duration is known
-  cachedCount: number; // segments of this chapter with audio ready
+  cachedCount: number; // segments of this chapter with audio ready (silent ones not counted)
+  spokenCount: number; // segments with something to say: the ones that need audio
   readonly error: PlayerError | null; // provider error at the current segment, else null
   skipped: Record<number, true>; // failed segments the user skipped
   stt: SttState;
@@ -73,8 +74,10 @@ export const player = reactive<Player>({
   total: 0,
   totalExact: false,
   cachedCount: 0,
+  spokenCount: 0,
   get error() {
-    return fails[this.seg] ?? null;
+    // skipping a failed last segment ends the list on it: that failure is behind you
+    return this.status === "ended" ? null : (fails[this.seg] ?? null);
   },
   skipped: {},
   stt: freshStt(),
@@ -102,6 +105,7 @@ let streamTimes: Span[] = []; // estimated word times while streaming
 let startWord = 0; // word to start from when the current segment's audio arrives
 let raf = 0;
 let keys: string[] = []; // cache key per segment, for the current voices
+let silent = new Set<number>(); // segments with nothing to say (they play SILENCE)
 const mem = new Map<number, Mem>(); // decoded-ready audio around the playhead
 const jobs = new Map<number, AbortController>(); // in-flight cache reads / TTS (and retry waits)
 let durs: (number | undefined)[] = [];
@@ -190,13 +194,16 @@ function updateTotals() {
   }
   player.total = t;
   player.totalExact = n > 0 && exact;
-  player.cachedCount = Object.values(player.segState).filter((s) => s === "ready").length;
+  player.spokenCount = n - silent.size;
+  player.cachedCount = 0;
+  for (const k in player.segState)
+    if (player.segState[k] === "ready" && !silent.has(+k)) player.cachedCount++;
 }
 
 function refreshStatus() {
   if (!doc) player.status = "idle";
-  else if (fails[player.seg]) player.status = "error";
   else if (ended) player.status = "ended";
+  else if (fails[player.seg]) player.status = "error";
   else if (wantPlay)
     player.status =
       gap || (loaded === player.seg && audio && !audio.paused) ? "playing" : "buffering";
@@ -237,6 +244,7 @@ function resetWork(keep = -1) {
       mem.delete(i);
     }
   durs = [];
+  silent = new Set();
   player.segState = {};
   player.skipped = {};
 }
@@ -245,10 +253,11 @@ function resetWork(keep = -1) {
 async function scan() {
   const g = gen;
   keys = segs().map(keyOf);
+  silent = new Set(segs().flatMap((seg, i) => (spoken(seg) ? [] : [i])));
   const es = await cache.getEntries(keys).catch(() => [] as (CacheEntry | undefined)[]);
   if (g !== gen) return;
-  segs().forEach((seg, i) => {
-    const d = spoken(seg) ? es[i]?.duration : SILENCE; // nothing to say: always ready
+  keys.forEach((_, i) => {
+    const d = silent.has(i) ? SILENCE : es[i]?.duration; // nothing to say: always ready
     if (d == null) return;
     durs[i] = d;
     player.segState[i] ??= "ready";
@@ -337,9 +346,12 @@ function prune() {
   }
 }
 
-/** Start requests for the window, nearest first, bounded. Stops at a failed segment. */
+/**
+ * Start requests for the window, nearest first, bounded. Stops at a failed segment.
+ * Only while you listen: a paused player asks for nothing (after Clear, nothing comes back by itself).
+ */
 function pump() {
-  if (!doc || !player.started) return;
+  if (!doc || !wantPlay) return;
   const hi = Math.min(segs().length - 1, player.seg + settings.prefetch);
   for (let i = player.seg; i <= hi && jobs.size < MAX_JOBS; i++) {
     if (mem.has(i) || (player.skipped[i] && i !== player.seg)) continue;

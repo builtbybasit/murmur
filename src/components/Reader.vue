@@ -1,15 +1,16 @@
 <script setup lang="ts">
 // Reading view. The chapter text is rendered once per doc as an HTML string (30k word spans
 // would be too heavy as reactive vnodes); highlight classes are moved imperatively in paint().
-import { computed, ref, watch, nextTick, onMounted } from "vue";
+import { computed, ref, watch, onMounted } from "vue";
 import { useEventListener, useMediaQuery } from "@vueuse/core";
 import { settings, device } from "../settings";
-import { current, currentDoc, library, setChapterBody, CHARS_PER_SEC } from "../library";
+import { current, currentDoc, library, CHARS_PER_SEC } from "../library";
 import { MOD, minutes } from "../lib/format";
-import { ui, toast } from "../ui";
+import { ui } from "../ui";
 import { docHtml } from "../lib/render";
 import { player, seek, pause, nextChapter, upNext } from "../engine";
 import { genState, toggleGenerate } from "../generate";
+import ChapterEditor from "./ChapterEditor.vue";
 
 const scroller = ref<HTMLElement | null>(null);
 const textEl = ref<HTMLElement | null>(null);
@@ -17,18 +18,12 @@ const doc = computed(() => currentDoc.value || null);
 
 const html = computed(() => (doc.value ? docHtml(doc.value) : ""));
 
-// ---------- editing the chapter text ----------
+// ---------- editing the chapter text (ChapterEditor) ----------
 const editing = computed(() => !!current.value && ui.editingId === current.value.id);
-const draft = ref("");
-const editor = ref<HTMLTextAreaElement | null>(null);
-watch(editing, async (on) => {
+watch(editing, (on) => {
   if (!on) return;
   pause();
-  draft.value = current.value!.body;
-  await nextTick();
   scroller.value?.scrollTo({ top: 0 });
-  editor.value?.focus();
-  editor.value?.setSelectionRange(0, 0);
 });
 watch(
   () => ui.currentId,
@@ -36,31 +31,13 @@ watch(
     if (ui.editingId && ui.editingId !== id) ui.editingId = null;
   },
 );
-function saveEdit() {
-  if (!setChapterBody(current.value!.id, draft.value))
-    return toast({ title: "Chapter text can't be empty", warn: true });
-  ui.editingId = null;
-  toast(
-    {
-      title: "Chapter updated",
-      sub: "Changed paragraphs are generated again; the rest stay cached",
-    },
-    3500,
-  );
-}
-function onEditKey(e: KeyboardEvent) {
-  if (e.key === "Escape") ui.editingId = null;
-  else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) saveEdit();
-  else return;
-  e.preventDefault();
-}
 
 // ---------- meta + end card ----------
 const totalSec = computed(() => player.total || (doc.value ? doc.value.chars / CHARS_PER_SEC : 0));
 const mins = computed(() => minutes(totalSec.value, settings.speed));
 const cached = computed(() => {
   const n = player.cachedCount,
-    all = doc.value?.segs.length ?? 0;
+    all = player.spokenCount;
   return n === 0 ? "nothing generated yet" : n >= all ? "fully cached" : `${n} of ${all} cached`;
 });
 const job = computed(() => (current.value ? genState(current.value) : null));
@@ -91,17 +68,19 @@ function els() {
   return segEls;
 }
 
-const badList = computed(() => {
-  const out = new Set<string>();
-  for (const k in player.segState) if (player.segState[k] === "failed") out.add(k);
-  for (const k in player.skipped) if (player.skipped[k]) out.add(k);
-  return [...out].join(",");
+/** Failed or skipped segments, ascending; the same array while nothing changes (no repaint). */
+const badList = computed<number[]>((old) => {
+  const out = new Set<number>();
+  for (const k in player.segState) if (player.segState[k] === "failed") out.add(+k);
+  for (const k in player.skipped) if (player.skipped[k]) out.add(+k);
+  const now = [...out].sort((a, b) => a - b);
+  return old?.length === now.length && old.every((v, i) => v === now[i]) ? old : now;
 });
 
 function paintBad() {
   const list = els();
   for (const e of badEls) e.classList.remove("bad");
-  badEls = badList.value ? badList.value.split(",").flatMap((i) => list[+i] ?? []) : [];
+  badEls = badList.value.flatMap((i) => list[i] ?? []);
   for (const e of badEls) e.classList.add("bad");
 }
 
@@ -208,10 +187,6 @@ useEventListener(window, "keydown", (e: KeyboardEvent) => {
 });
 onMounted(onDoc);
 
-function backToCurrent() {
-  ui.follow = true;
-}
-
 function onClick(e: MouseEvent) {
   const t = e.target as Element;
   const w = t.closest<HTMLElement>(".w");
@@ -248,7 +223,7 @@ function onClick(e: MouseEvent) {
             {{ job === "queued" ? "waiting to generate · cancel" : "generating · stop" }}
           </button>
           <button
-            v-else-if="job !== 'done' && player.cachedCount < doc.segs.length"
+            v-else-if="job !== 'done' && player.cachedCount < player.spokenCount"
             class="lnk"
             title="Generate audio for every segment in the background"
             @click="toggleGenerate(current.id)"
@@ -256,52 +231,33 @@ function onClick(e: MouseEvent) {
             {{ player.cachedCount ? "generate the rest" : "generate all" }}
           </button>
         </div>
-        <div v-if="editing" class="edit">
-          <textarea
-            ref="editor"
-            v-model="draft"
-            spellcheck="false"
-            aria-label="Chapter text"
-            @keydown="onEditKey"
-          />
-          <div class="edit-bar">
-            <span
-              >Each line is a paragraph. <code>**bold**</code> <code>*italic*</code>
-              <code>~~strike~~</code> <code>-&gt; centred &lt;-</code> <code>&gt; box</code> <code
-                >***</code
-              >
-              scene break. Unchanged paragraphs keep their audio.</span
-            >
-            <span class="sp" />
-            <button class="btn ghost" @click="ui.editingId = null">Cancel <kbd>Esc</kbd></button>
-            <button class="btn pri" @click="saveEdit">Save <kbd>{{ MOD }}↵</kbd></button>
-          </div>
-        </div>
+        <ChapterEditor v-if="editing" :chapter="current" />
         <!-- v-show, not v-if: paint() keeps references into this element -->
         <div v-show="!editing" ref="textEl" class="chapter" @click="onClick" v-html="html" />
-        <template v-if="editing" />
-        <button v-else-if="upNext" class="endcard" @click="nextChapter()">
-          <span
-            ><small class="label dim">Up next · plays automatically</small
-            ><b>{{ upNext.title }}</b></span
-          >
-          <span class="sp" />
-          <kbd>J</kbd>
-        </button>
-        <div v-else class="endcard">
-          <span
-            ><small class="label dim">End of the list</small
-            ><b>Paste the next chapter to keep listening</b></span
-          >
-          <span class="sp" />
-          <kbd>{{ MOD }}V</kbd>
-        </div>
+        <template v-if="!editing">
+          <button v-if="upNext" class="endcard" @click="nextChapter()">
+            <span
+              ><small class="label dim">Up next · plays automatically</small
+              ><b>{{ upNext.title }}</b></span
+            >
+            <span class="sp" />
+            <kbd>J</kbd>
+          </button>
+          <div v-else class="endcard">
+            <span
+              ><small class="label dim">End of the list</small
+              ><b>Paste the next chapter to keep listening</b></span
+            >
+            <span class="sp" />
+            <kbd>{{ MOD }}V</kbd>
+          </div>
+        </template>
       </article>
     </section>
     <button
       v-if="!ui.follow && player.started && doc && !editing"
       class="follow"
-      @click="backToCurrent"
+      @click="ui.follow = true"
     >
       Back to current <kbd>F</kbd>
     </button>
@@ -329,38 +285,6 @@ function onClick(e: MouseEvent) {
   font: var(--rs) / var(--rl) var(--read);
   color: var(--ink);
   font-optical-sizing: auto;
-}
-.edit textarea {
-  display: block;
-  width: 100%;
-  min-height: 60vh;
-  field-sizing: content;
-  resize: vertical;
-  padding: 12px 14px;
-  border: 1px solid var(--line2);
-  border-radius: var(--r2);
-  background: var(--raised);
-  font: inherit;
-  line-height: var(--rl);
-  color: var(--ink);
-}
-.edit textarea:focus {
-  outline: 2px solid var(--acc);
-  outline-offset: 1px;
-}
-.edit-bar {
-  position: sticky;
-  bottom: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 0;
-  background: var(--page);
-  font: 12px/1.45 var(--ui);
-  color: var(--ink3);
-}
-.edit-bar kbd {
-  margin-left: 2px;
 }
 .page h1 {
   font: 600 1.55em/1.2 var(--read);
