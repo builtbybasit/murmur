@@ -754,10 +754,178 @@ watch(
 
 function refresh() {
   stopAhead(); // voices or spoken text changed: the prefetched keys are stale
+  restartGenerate(); // the running chapter job starts over with the new keys
   if (!doc) return;
   resetWork(loaded);
   void scan();
   kick();
+}
+
+// ---------- generate whole chapters in the background ----------
+
+export interface GenJob {
+  state: "queued" | "running" | "done" | "failed";
+  done: number; // segments ready (audio, and word timings when alignment is on)
+  total: number;
+  error: string;
+}
+/** Chapter id -> background generation job. Chapters run one at a time, in click order. */
+export const generating = reactive<Record<string, GenJob>>({});
+const genQueue: string[] = [];
+let genRunning: { id: string; ac: AbortController } | null = null;
+
+/** Start (or queue) generating a chapter's audio; on a queued/running chapter, stop it. */
+export function toggleGenerate(id: string) {
+  const j = generating[id];
+  if (j?.state === "queued" || j?.state === "running") {
+    const q = genQueue.indexOf(id);
+    if (q >= 0) genQueue.splice(q, 1);
+    if (genRunning?.id === id) genRunning.ac.abort();
+    delete generating[id];
+    return;
+  }
+  generating[id] = { state: "queued", done: 0, total: 0, error: "" };
+  genQueue.push(id);
+  void genLoop();
+}
+
+function restartGenerate() {
+  if (!genRunning) return;
+  const { id, ac } = genRunning;
+  ac.abort();
+  generating[id] = { state: "queued", done: 0, total: 0, error: "" };
+  genQueue.unshift(id);
+}
+
+const sleep = (ms: number, signal: AbortSignal) =>
+  new Promise<void>((res, rej) => {
+    const t = setTimeout(res, ms);
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(t);
+        rej(new DOMException("stopped", "AbortError"));
+      },
+      { once: true },
+    );
+  });
+
+async function genLoop() {
+  if (genRunning) return;
+  while (genQueue.length) {
+    const id = genQueue.shift()!;
+    const c = library.chapters.find((c) => c.id === id);
+    const j = generating[id];
+    if (!c || !j) {
+      delete generating[id];
+      continue;
+    }
+    const ac = new AbortController();
+    genRunning = { id, ac };
+    j.state = "running";
+    try {
+      await genChapter(c.id, docOf(c), j, ac.signal);
+      j.state = "done";
+    } catch (e) {
+      if (!ac.signal.aborted) {
+        Object.assign(j, { state: "failed", error: toPlain(e).message });
+        ac.abort(); // stops the other worker
+      }
+    }
+    genRunning = null;
+  }
+}
+
+async function genChapter(id: string, d: Doc, j: GenJob, signal: AbortSignal) {
+  const align = () => settings.stt.enabled && providerById(settings.stt.providerId);
+  const keys = d.segs.map(keyOf);
+  const have = await cache.getEntries(keys).catch(() => [] as (cache.CacheEntry | undefined)[]);
+  j.total = d.segs.length;
+  j.done = 0;
+  const todo: number[] = [];
+  d.segs.forEach((seg, i) => {
+    const e = have[i];
+    if (!spoken(seg) || (e && (e.stt || !align()))) j.done++;
+    else todo.push(i);
+  });
+  let sttFails = 0;
+  // two workers; the second rests while you listen, and both wait while playback is buffering
+  const worker = async (k: number) => {
+    while (todo.length) {
+      while (player.status === "buffering" || (k && wantPlay)) await sleep(300, signal);
+      const i = todo.shift();
+      if (i === undefined) return;
+      const seg = d.segs[i]!;
+      let e = have[i];
+      if (!e) {
+        const v = voiceFor(seg.kind);
+        if (!v.provider) throw new Error(`No provider is set for ${v.role}`);
+        const say = spoken(seg);
+        const blob = await retrying(
+          () => tts({ provider: v.provider!, model: v.model, voice: v.voice, input: say, signal }),
+          signal,
+        );
+        const duration = (await durationOf(blob)) ?? say.length / CHARS_PER_SEC;
+        e = { blob, duration, bytes: blob.size, stt: null, at: Date.now() };
+        await cache.putEntry(keys[i]!, e).catch(noop);
+      }
+      const sp = align();
+      if (sp && !e.stt && sttFails < 3)
+        try {
+          const { words } = await transcribe({
+            provider: sp,
+            model: settings.stt.model,
+            blob: e.blob,
+            signal,
+          });
+          if (words.length) {
+            e.stt = words;
+            await cache.setStt(keys[i]!, words).catch(noop);
+          }
+          sttFails = 0;
+        } catch (err) {
+          if (signal.aborted) throw err;
+          sttFails++; // alignment is a bonus: after 3 failures in a row, audio only
+        }
+      if (id === chId) noteCached(i, e);
+      j.done++;
+    }
+  };
+  await Promise.all([worker(0), worker(1)]);
+}
+
+/** Retry rate limits, network errors and 5xx like playback does. */
+async function retrying<T>(f: () => Promise<T>, signal: AbortSignal): Promise<T> {
+  for (let n = 0; ; n++)
+    try {
+      return await f();
+    } catch (err) {
+      const e = toPlain(err);
+      const again =
+        e.code === "rate" || e.code === "network" || (e.code === "http" && e.status >= 500);
+      if (signal.aborted || !again || n >= MAX_RETRIES) throw err;
+      await sleep(
+        1000 * (e.code === "rate" ? (e.retryAfter ?? RATE_DELAYS[n]!) : NET_DELAYS[n]!),
+        signal,
+      );
+    }
+}
+
+/** A background job cached segment i of the open chapter: show it as ready. */
+function noteCached(i: number, e: cache.CacheEntry) {
+  if (!doc) return;
+  cached.add(i);
+  durs[i] = e.duration;
+  player.segState[i] ??= "ready";
+  const m = mem.get(i);
+  if (e.stt) {
+    player.aligned[i] = true;
+    if (m && !m.stt) {
+      m.stt = e.stt;
+      m.times = alignWords(segs()[i]!.words, e.stt, m.duration);
+    }
+  }
+  updateTotals();
 }
 
 // ---------- public API ----------

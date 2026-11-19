@@ -1,7 +1,16 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
 import { onClickOutside, useMediaQuery } from "@vueuse/core";
-import { FilePenLine, GripVertical, Pencil, Trash2 } from "@lucide/vue";
+import {
+  CircleCheck,
+  Clock,
+  Download,
+  FilePenLine,
+  GripVertical,
+  Pencil,
+  Trash2,
+  TriangleAlert,
+} from "@lucide/vue";
 import {
   settings,
   ui,
@@ -15,7 +24,7 @@ import {
   type Chapter,
 } from "../store";
 import { pasteFromClipboard, undoWithToast } from "../paste";
-import { player, open, edit } from "../engine";
+import { player, open, edit, generating, toggleGenerate } from "../engine";
 
 const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl+";
 const narrow = useMediaQuery("(max-width: 820px)");
@@ -35,6 +44,17 @@ const pct = (c: Chapter) => {
   const n = docOf(c).segs.length;
   return n ? Math.min(100, Math.round((100 * c.pos) / n)) : 0;
 };
+const RING = 2 * Math.PI * 6; // progress ring circumference (r = 6)
+function genTitle(id: string) {
+  const j = generating[id]!;
+  return {
+    queued: "Waiting to generate audio. Click to cancel.",
+    running: `Generating audio: ${j.done} of ${j.total} segments. Click to stop; finished segments stay.`,
+    failed: `Audio generation stopped: ${j.error}. Click to try again.`,
+    done: "Audio ready for the whole chapter.",
+  }[j.state];
+}
+
 const rowEl = (id: string) => list.value?.querySelector<HTMLElement>(`[data-id="${id}"]`);
 const focusRow = (id?: string) => id && nextTick(() => rowEl(id)?.focus());
 
@@ -212,8 +232,45 @@ function pickEpub(e: Event) {
         />
         <span v-else class="t">{{ c.title }}</span>
         <span v-if="c.short" class="short">short</span>
+        <button
+          v-if="generating[c.id]"
+          class="gen"
+          :class="generating[c.id]!.state"
+          :title="genTitle(c.id)"
+          :aria-label="genTitle(c.id)"
+          @click.stop="toggleGenerate(c.id)"
+        >
+          <svg
+            v-if="generating[c.id]!.state === 'running'"
+            viewBox="0 0 16 16"
+            width="14"
+            height="14"
+          >
+            <circle cx="8" cy="8" r="6" class="track" />
+            <circle
+              cx="8"
+              cy="8"
+              r="6"
+              class="bar"
+              :stroke-dasharray="`${(RING * generating[c.id]!.done) / Math.max(1, generating[c.id]!.total)} ${RING}`"
+              transform="rotate(-90 8 8)"
+            />
+          </svg>
+          <Clock v-else-if="generating[c.id]!.state === 'queued'" :size="13" />
+          <TriangleAlert v-else-if="generating[c.id]!.state === 'failed'" :size="13" />
+          <CircleCheck v-else :size="13" />
+        </button>
         <span class="m num">{{ mins(c) }}m</span>
         <span class="acts">
+          <button
+            v-if="!generating[c.id]"
+            class="ib"
+            title="Generate audio for the whole chapter, in the background"
+            aria-label="Generate audio"
+            @click.stop="toggleGenerate(c.id)"
+          >
+            <Download :size="14" :stroke-width="1.5" />
+          </button>
           <button
             class="ib"
             title="Rename (F2)"
@@ -362,6 +419,38 @@ input.t {
 .row:hover .m,
 .row:focus-within .m {
   display: none;
+}
+.gen {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  color: var(--ink3);
+}
+.gen:hover {
+  background: var(--raised);
+}
+.gen.running {
+  color: var(--acc);
+}
+.gen.failed {
+  color: var(--err);
+}
+.gen.done {
+  color: var(--ok);
+}
+.gen circle {
+  fill: none;
+  stroke-width: 2.2;
+}
+.gen .track {
+  stroke: var(--line2);
+}
+.gen .bar {
+  stroke: currentColor;
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.3s;
 }
 .acts .ib {
   width: 24px;
