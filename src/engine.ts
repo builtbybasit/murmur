@@ -288,8 +288,7 @@ onCached((key, e) => {
     hit = true;
     durs[i] = e.duration;
     player.segState[i] ??= "ready";
-    if (e.stt) untimed.delete(i);
-    else untimed.add(i);
+    if (e.stt) untimed.delete(i); // new audio without timings is not counted: they are on the way
     const m = mem.get(i);
     if (m && e.stt?.length && !m.times) {
       m.entry.stt = e.stt;
@@ -304,6 +303,17 @@ function load(
   id: string | null,
   o: { seg?: number; autoplay?: boolean; keepStarted?: boolean } = {},
 ) {
+  const c = library.chapters.find((c) => c.id === id);
+  // Its text is still on its way: open it when the text arrives (the watcher below calls load
+  // again), with these options. Loading it now would see no segments and lose the position.
+  if (c && !hasBody(c)) {
+    if (id !== chId) {
+      opening = { id: c.id, seg: o.seg, autoplay: o.autoplay };
+      pause();
+    }
+    void loadBodies([c.id]);
+    return;
+  }
   endGap(false);
   stopAhead(id); // opening the prefetched chapter lets it finish
   if (id !== chId) player.stt = freshStt();
@@ -312,7 +322,6 @@ function load(
   stopAudio();
   resetWork();
   chId = id;
-  const c = library.chapters.find((c) => c.id === id);
   doc = hasBody(c) ? docOf(c) : null;
   const n = segs().length;
   Object.assign(player, {
@@ -598,6 +607,8 @@ async function runStt(i: number, m: Mem, prov: Provider) {
   } catch (err) {
     if (ac.signal.aborted || g !== gen) return;
     const e = toError(err);
+    untimed.add(i);
+    updateTotals();
     const st = player.stt;
     st.fails++;
     st.failing = true;
@@ -622,12 +633,6 @@ const takeOpening = (id: string | null) => {
 watch(
   [() => ui.currentId, currentDoc],
   ([id, d]) => {
-    // its text is still on its way: stop this one, open it when the text arrives (this runs again)
-    if (id && !d && library.chapters.some((c) => c.id === id)) {
-      if (id !== chId) pause();
-      void loadBodies([id]);
-      return;
-    }
     if (id !== chId) load(id, takeOpening(id));
     else if (d !== doc) load(id, { seg: player.seg, autoplay: wantPlay, keepStarted: true });
   },
@@ -664,6 +669,15 @@ watch(
 );
 
 /** Cache keys changed or audio was deleted: look at the cache again. */
+/** Count again which cached segments lack word timings: after background work, some may have failed. */
+export async function recountUntimed() {
+  const g = gen;
+  const es = await cache.getEntries(keys).catch(() => null);
+  if (!es || g !== gen) return;
+  untimed = new Set(keys.flatMap((_, i) => (!silent.has(i) && es[i] && !es[i].stt ? [i] : [])));
+  updateTotals();
+}
+
 export function rescan() {
   stopAhead();
   if (!doc) return;

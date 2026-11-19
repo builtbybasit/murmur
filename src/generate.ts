@@ -3,7 +3,7 @@ import { reactive, watch } from "vue";
 import { useLocalStorage } from "@vueuse/core";
 import { settings } from "./settings";
 import { library, docOf, hasBody, loadBodies, loadAllBodies, type Chapter } from "./library";
-import { player, rescan } from "./engine";
+import { player, recountUntimed, rescan } from "./engine";
 import { align, audioSig, getAudio, keyOf, retrying, spoken, sttProvider } from "./synth";
 import { toError } from "./lib/api";
 import * as cache from "./lib/cache";
@@ -98,6 +98,7 @@ async function genLoop() {
       }
     }
     running = null;
+    void recountUntimed(); // alignment failures in that chapter show in the reader
   }
 }
 
@@ -203,7 +204,7 @@ export async function alignMissing(ids: string[]) {
   } finally {
     timingAc = null;
     timing.running = false;
-    rescan(); // counts in the reader come from the cache again
+    void recountUntimed();
   }
 }
 
