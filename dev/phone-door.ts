@@ -8,13 +8,13 @@ import { createServer } from "node:https";
 import { connect } from "node:net";
 
 /** Marks a request that came through the door; the key check applies to it (see `guard`). */
-export const VIA = "x-lectern-remote";
+export const VIA = "x-murmur-remote";
 
 export async function openPhoneDoor(
   target: number,
   certDir: string,
 ): Promise<{ port: number; close: () => void } | null> {
-  const pem = await getCertificate(certDir, "lectern"); // key and cert in one PEM
+  const pem = await getCertificate(certDir, "murmur"); // key and cert in one PEM
   const port = target + 1000;
   const headersFor = (h: IncomingHttpHeaders, remote = "") => ({ ...h, [VIA]: remote || "1" });
 
@@ -57,7 +57,7 @@ export async function openPhoneDoor(
 
   return new Promise((resolve) => {
     door.once("error", (e) => {
-      console.error(`lectern: phone access is off, port ${port} is busy (${e.message})`);
+      console.error(`murmur: phone access is off, port ${port} is busy (${e.message})`);
       resolve(null);
     });
     door.listen(port, "0.0.0.0", () =>

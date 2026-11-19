@@ -34,12 +34,12 @@ function pick(v: null | "chapter" | number) {
     :class="{ on: sleepTimer.mode }"
     :title="sleepTimer.mode ? `Sleep timer: ${label}` : 'Sleep timer'"
     aria-label="Sleep timer"
-    popovertarget="lectern-sleep"
+    popovertarget="murmur-sleep"
   >
     <Moon :size="13" /><span v-if="sleepTimer.mode">{{ label }}</span>
   </button>
   <div
-    id="lectern-sleep"
+    id="murmur-sleep"
     ref="pop"
     popover
     class="pop menu"

@@ -1,5 +1,5 @@
 // Audio cache in IndexedDB: one entry per (provider URL, model, voice, text), with duration and STT words.
-import { createStore, get, getMany, set, del, delMany, entries, clear } from "idb-keyval";
+import { createStore, get, getMany, set, del, delMany, entries, clear, keys } from "idb-keyval";
 import type { SttWord } from "./align";
 
 export interface CacheEntry {
@@ -8,7 +8,19 @@ export interface CacheEntry {
   stt: SttWord[] | null; // raw STT word timestamps, aligned on load
 }
 
-const store = createStore("lectern-audio", "segments");
+const store = createStore("murmur-audio", "segments");
+
+// ponytail: one-time copy of audio cached under the app's old name, one entry at a time (phones
+// have little memory); delete with ~/.lectern's move
+void (async () => {
+  if (!(await indexedDB.databases()).some((d) => d.name === "lectern-audio")) return;
+  const old = createStore("lectern-audio", "segments");
+  for (const k of await keys(old)) {
+    const e = await get(k, old);
+    if (e) await set(k, e, store);
+  }
+  indexedDB.deleteDatabase("lectern-audio"); // finishes once this page closes the old store
+})().catch(() => {});
 
 // cyrb53, run twice with different seeds: ~106 bits, synchronous (crypto.subtle is async and
 // missing outside secure contexts). ponytail: not cryptographic, collisions are astronomically unlikely here.

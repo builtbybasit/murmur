@@ -48,11 +48,11 @@ function run(f: () => unknown) {
 </script>
 
 <template>
-  <button class="chip timing" :class="timing.cls" popovertarget="lectern-timing">
+  <button class="chip timing" :class="timing.cls" popovertarget="murmur-timing">
     <i class="ring" /><span>{{ timing.label }}</span>
   </button>
   <div
-    id="lectern-timing"
+    id="murmur-timing"
     ref="pop"
     popover
     class="pop"

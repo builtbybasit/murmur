@@ -1,4 +1,4 @@
-// Book images (from EPUB imports) on the lectern server, keyed by content hash. Chapters reference
+// Book images (from EPUB imports) on the murmur server, keyed by content hash. Chapters reference
 // them as ![alt](img:<id>) in their Markdown; the reader shows /api/images/<id>.
 import { apiFetch, getJson } from "./server";
 

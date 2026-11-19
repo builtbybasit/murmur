@@ -10,7 +10,7 @@ import * as cache from "./lib/cache";
 import type { Doc } from "./lib/segment";
 
 /** Chapters whose audio is all generated, per device (its own cache): id -> audioSig. */
-const readyMarks = useLocalStorage<Record<string, string>>("lectern.ready", {});
+const readyMarks = useLocalStorage<Record<string, string>>("murmur.ready", {});
 
 interface GenJob {
   state: "queued" | "running" | "failed";

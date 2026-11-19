@@ -1,4 +1,4 @@
-// Settings. `settings` is shared by every device through the lectern server (loaded and saved
+// Settings. `settings` is shared by every device through the murmur server (loaded and saved
 // by sync.ts); `device` is this browser's own (reading look, sidebar), in localStorage.
 import { computed, reactive } from "vue";
 import { useLocalStorage } from "@vueuse/core";
@@ -128,9 +128,17 @@ export function loadSettings(s: Partial<Settings> | null) {
     p.kind ??= rolesOf(p.id).join() === "alignment" ? "stt" : "tts";
 }
 
+// ponytail: one-time move of this browser's state from the app's old name; delete with ~/.lectern's move
+for (const k of ["device", "ready"]) {
+  const v = localStorage.getItem("lectern." + k);
+  if (v != null && localStorage.getItem("murmur." + k) == null)
+    localStorage.setItem("murmur." + k, v);
+  localStorage.removeItem("lectern." + k);
+}
+
 /** This browser's own settings. */
 export const device = useLocalStorage(
-  "lectern.device",
+  "murmur.device",
   {
     reading: {
       font: "serif" as FontKey,

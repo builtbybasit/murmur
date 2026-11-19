@@ -39,7 +39,7 @@ export function docHtml(d: Doc): string {
     }
     if (b.rule) out += "<hr>";
     if (b.tag === "img") {
-      // book images come from the lectern server; web images load directly
+      // book images come from the murmur server; web images load directly
       const s = d.segs[idx[0]!]!;
       const src = s.img!.src.replace(/^img:/, "/api/images/");
       out += `<p class="fig"><span class="seg narr" data-s="${s.i}"><img src="${attr(src)}" alt="${attr(s.img!.alt)}" loading="lazy"></span></p>`;

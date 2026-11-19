@@ -1,4 +1,4 @@
-// /api calls to the lectern dev server (dev/server.ts). Other devices get in with a cookie the
+// /api calls to the murmur dev server (dev/server.ts). Other devices get in with a cookie the
 // phone link sets; this Mac needs none.
 import { reactive } from "vue";
 

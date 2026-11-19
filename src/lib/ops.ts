@@ -1,5 +1,5 @@
 // Library changes as data. The browser applies an op to its copy at once and sends it to the
-// server, which applies the same function to ~/.lectern. Ops say what to do, not the resulting
+// server, which applies the same function to ~/.murmur. Ops say what to do, not the resulting
 // list, so a device with a stale copy cannot drop or reorder chapters it never saw. Pure, no Vue.
 
 export interface Chapter {

@@ -8,5 +8,5 @@ startSync().then(
   () => createApp(App).mount("#app"),
   (e: Error) =>
     (document.getElementById("app")!.textContent =
-      "Can't reach the lectern server (" + e.message + "). Is `bun run dev` running?"),
+      "Can't reach the murmur server (" + e.message + "). Is `bun run dev` running?"),
 );

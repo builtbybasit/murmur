@@ -1,4 +1,4 @@
-# lectern: UI/UX design (v1)
+# murmur: UI/UX design (v1)
 
 Local, single-user reader that speaks webnovel chapters and highlights each word as it is spoken.
 Vue 3 + Vite front end; the dev server (dev/server.ts) relays to OpenAI-compatible providers and keeps the shared library.
@@ -16,7 +16,7 @@ Design principles, in priority order:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│ top bar 44px   [☰] lectern │ Chapter title            [Aa] [⌨] [settings]│
+│ top bar 44px   [☰] murmur │ Chapter title            [Aa] [⌨] [settings]│
 ├───────────────┬──────────────────────────────────────────────────────────┤
 │ sidebar 264px │ main (one of: reader · settings · onboarding)            │
 │               │                                                          │
@@ -56,7 +56,7 @@ Decision: **there is no add dialog and no text box.** Paste is a global action.
 Step by step:
 
 1. Copy a chapter in the browser tab where you read.
-2. Switch to lectern and press `⌘V` / `Ctrl+V` anywhere (any screen, as long as focus is not in a text field).
+2. Switch to murmur and press `⌘V` / `Ctrl+V` anywhere (any screen, as long as focus is not in a text field).
 3. The chapter is appended to the end of the list. Its row flashes teal and scrolls into view.
 4. A toast confirms what was understood: `Added "Chapter 5: Low Water"` · `144 words · 10 segments · ready for the next paste`, with **Rename** and **Undo** buttons (`⌘Z` also undoes).
 5. Nothing else changes. Playback is not interrupted and the selected chapter does not change, so step 1 to 4 can be repeated as fast as you can alt-tab. The only exception: the very first chapter is opened automatically.
@@ -315,7 +315,7 @@ Reading measure defaults to 66ch. UI type inside the reading column (the meta li
 
 ## 9. Notes for the build
 
-- Storage: chapters, positions, images, settings and API keys on the server in `~/.lectern`; audio blobs and word timings in each browser's IndexedDB; reading look in `localStorage`.
+- Storage: chapters, positions, images, settings and API keys on the server in `~/.murmur`; audio blobs and word timings in each browser's IndexedDB; reading look in `localStorage`.
 - Cache key: `hash(provider base URL, model, voice, segment text)`. Renaming, reordering and re-segmenting do not invalidate unchanged segments.
 - Popovers and the shortcut sheet use the native Popover API and `<dialog>`.
 

@@ -127,7 +127,7 @@ function addVoice(p: Provider) {
   <h2>Providers</h2>
   <p class="hint">
     OpenAI-compatible endpoints, reached through the relay on this Mac. Keys stay in
-    <code>~/.lectern</code>; browsers never get them.
+    <code>~/.murmur</code>; browsers never get them.
   </p>
   <div v-for="p in settings.providers" :key="p.id" class="prov" :class="{ bad: dot(p) === 'bad' }">
     <button class="prov-h" :aria-expanded="ui.openProviderId === p.id" @click="toggle(p)">

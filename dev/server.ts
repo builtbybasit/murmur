@@ -1,5 +1,5 @@
-// The lectern server, as a Vite plugin: the shared library (/api) and the provider relay (/relay).
-// Everything lives in ~/.lectern (LECTERN_DATA), outside the folder Vite serves.
+// The murmur server, as a Vite plugin: the shared library (/api) and the provider relay (/relay).
+// Everything lives in ~/.murmur (MURMUR_DATA), outside the folder Vite serves.
 //
 // Who gets in: this Mac on localhost, and devices that opened the phone link once (its ?key=
 // becomes a cookie). Hostnames other than localhost and IP addresses are refused, so a web page
@@ -29,7 +29,18 @@ import { openPhoneDoor, VIA } from "./phone-door";
 import { applyOp, type Chapter, type Library, type Op } from "../src/lib/ops";
 
 // Paths are resolved on first use, so loading the config (lint, format) touches nothing.
-export const DATA = () => process.env.LECTERN_DATA ?? join(homedir(), ".lectern");
+let dataDir: string | undefined;
+export const DATA = () => (dataDir ??= process.env.MURMUR_DATA ?? homeData());
+function homeData() {
+  const dir = join(homedir(), ".murmur");
+  // ponytail: one-time move from the app's old name; delete once nobody has a ~/.lectern
+  const old = join(homedir(), ".lectern");
+  if (!existsSync(dir) && existsSync(old)) {
+    renameSync(old, dir);
+    console.log(`  murmur: moved ${old} to ${dir}`);
+  }
+  return dir;
+}
 const file = (name: string) => join(DATA(), name);
 
 // ---------- files ----------
@@ -67,7 +78,7 @@ function getKey() {
   if (!existsSync(f)) writeFileSync(f, randomBytes(12).toString("hex"), { mode: 0o600 });
   return (key = readFileSync(f, "utf8").trim());
 }
-const COOKIE = "lectern";
+const COOKIE = "murmur";
 const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 
 const hostOk = (host = "") => {
@@ -75,7 +86,7 @@ const hostOk = (host = "") => {
   return name === "localhost" || isIP(name) !== 0;
 };
 const cookieKey = (req: IncomingMessage) =>
-  /(?:^|;\s*)lectern=([^;]+)/.exec(req.headers.cookie ?? "")?.[1];
+  /(?:^|;\s*)murmur=([^;]+)/.exec(req.headers.cookie ?? "")?.[1];
 
 /** Every request: the Host and Origin checks, then the key (from the link or the cookie). */
 const guard: Connect.NextHandleFunction = (req, res, next) => {
@@ -101,7 +112,7 @@ const guard: Connect.NextHandleFunction = (req, res, next) => {
   const local = LOOPBACK.has(req.socket.remoteAddress ?? "") && !req.headers[VIA];
   if (local || cookieKey(req) === getKey()) return next();
   res.statusCode = 401;
-  res.end("Open the phone link from the lectern app on your Mac");
+  res.end("Open the phone link from the murmur app on your Mac");
 };
 
 // ---------- library ----------
@@ -390,8 +401,8 @@ async function relay(req: IncomingMessage, res: ServerResponse) {
 // ---------- the plugin ----------
 
 // The dev server is always reachable from your phone: on the network, over HTTPS (phones only
-// allow lock-screen controls on secure pages). LECTERN_LOCAL=1 keeps it to this Mac.
-const PHONE = !process.env.LECTERN_LOCAL;
+// allow lock-screen controls on secure pages). MURMUR_LOCAL=1 keeps it to this Mac.
+const PHONE = !process.env.MURMUR_LOCAL;
 
 function mount(m: Connect.Server) {
   m.use(guard);
@@ -399,8 +410,8 @@ function mount(m: Connect.Server) {
   m.use("/api", api);
 }
 
-export const lectern: Plugin = {
-  name: "lectern",
+export const murmur: Plugin = {
+  name: "murmur",
   configureServer(s) {
     mount(s.middlewares);
     if (PHONE)

@@ -30,7 +30,7 @@ if ("mediaSession" in navigator) {
         ? new MediaMetadata({
             title,
             artist: n ? `Segment ${seg + 1} of ${n}` : "",
-            album: "lectern",
+            album: "murmur",
           })
         : null;
     },

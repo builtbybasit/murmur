@@ -43,7 +43,7 @@ async function copy() {
       </p>
     </template>
     <p v-else class="note">
-      Not on a network right now. Start lectern with <code>bun run dev</code> while this Mac is on
+      Not on a network right now. Start murmur with <code>bun run dev</code> while this Mac is on
       Wi-Fi.
     </p>
   </div>

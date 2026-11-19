@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 import vue from "@vitejs/plugin-vue";
 import { defineConfig, lazyPlugins } from "vite-plus";
-import { lectern } from "./dev/server";
+import { murmur } from "./dev/server";
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -12,5 +12,5 @@ export default defineConfig({
     options: { typeAware: true, typeCheck: true },
   },
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
-  plugins: lazyPlugins(() => [vue(), lectern]),
+  plugins: lazyPlugins(() => [vue(), murmur]),
 });

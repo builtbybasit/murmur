@@ -1,4 +1,4 @@
-// Loading the shared library and settings from the lectern server, saving settings, and picking
+// Loading the shared library and settings from the murmur server, saving settings, and picking
 // up what other devices changed when you come back to this one. Library changes are sent as
 // they happen (library.ts); the engine follows another device's chapter and position itself.
 import { useEventListener, watchDebounced } from "@vueuse/core";

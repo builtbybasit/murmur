@@ -64,7 +64,7 @@ async function save() {
         {{
           hasTts
             ? "Copy a chapter from wherever you read, then paste it here. Each paste becomes one chapter."
-            : "lectern reads webnovel chapters aloud and highlights each word as it is spoken. It needs a speech provider and something to read. Do them in either order."
+            : "murmur reads webnovel chapters aloud and highlights each word as it is spoken. It needs a speech provider and something to read. Do them in either order."
         }}
       </p>
       <div class="steps">

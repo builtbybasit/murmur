@@ -1,4 +1,4 @@
-// Fake OpenAI-compatible TTS + STT server for testing lectern without real providers.
+// Fake OpenAI-compatible TTS + STT server for testing murmur without real providers.
 // Run: bun dev/fake-provider.ts   (port 8899, or PORT=...)
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createHash } from "node:crypto";
@@ -168,5 +168,5 @@ server.listen(PORT, () =>
   POST /v1/audio/transcriptions  -> verbose_json word timestamps for audio this server made
   failure voices: fail401, fail429 (Retry-After: 3), fail500, flaky (50% 500), slow (+4 s)
   STT failure: voice "sttfail" (its audio won't transcribe) or STT model "sttfail"
-  In lectern: add a Blank provider with base URL http://localhost:${PORT}/v1`),
+  In murmur: add a Blank provider with base URL http://localhost:${PORT}/v1`),
 );

@@ -23,7 +23,7 @@ const onMac = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
     >
       <PanelLeft :size="16" :stroke-width="1.5" />
     </button>
-    <div class="brand">lectern</div>
+    <div class="brand">murmur</div>
     <div class="crumb">
       <template v-if="ui.view === 'settings'">Settings</template>
       <template v-else-if="current"

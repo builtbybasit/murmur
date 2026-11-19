@@ -47,8 +47,8 @@ const clear = () =>
 <template>
   <h2>Storage</h2>
   <p class="hint">
-    Chapters, reading positions, images and settings are shared through the lectern server on your
-    Mac (<code>~/.lectern</code>), so your phone sees the same library. Audio is cached in each
+    Chapters, reading positions, images and settings are shared through the murmur server on your
+    Mac (<code>~/.murmur</code>), so your phone sees the same library. Audio is cached in each
     browser. To listen on your phone, use the phone button in the top bar.
     <span v-if="sync.error" class="bad-t"
       ><br />Last save to the server failed ({{ sync.error }}); it is retried with your next
@@ -85,7 +85,7 @@ const clear = () =>
       <span v-else />
       <span>API keys</span>
       <span
-        >Stored unencrypted in <code>~/.lectern</code> on your Mac<br /><small class="h"
+        >Stored unencrypted in <code>~/.murmur</code> on your Mac<br /><small class="h"
           >Only the Mac's relay uses them; no browser, phone included, ever gets them.</small
         ></span
       >

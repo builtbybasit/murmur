@@ -1,4 +1,4 @@
-// Chapters and reading positions. They live on the lectern server: every change is an op
+// Chapters and reading positions. They live on the murmur server: every change is an op
 // (lib/ops.ts) applied here at once and sent to the server in order. Ops that could not be sent
 // stay queued and are applied again on top of whatever the server sends back (see `replaceLibrary`).
 import { computed, reactive } from "vue";
