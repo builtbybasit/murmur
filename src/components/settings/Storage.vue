@@ -1,8 +1,16 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { library } from "@/library";
 import { toast } from "@/ui";
-import { clearCache, storageByBook, dropAudio, type BookStorage } from "@/generate";
+import {
+  alignMissing,
+  clearCache,
+  storageByBook,
+  dropAudio,
+  timing,
+  type BookStorage,
+} from "@/generate";
+import { sttProvider } from "@/synth";
 import { unusedImages, removeUnusedImages } from "@/lib/images";
 import { sync } from "@/lib/server";
 import { bytes, plural } from "@/lib/format";
@@ -40,6 +48,11 @@ function clearOther() {
 }
 const clearImages = () =>
   cleared(removeUnusedImages(), `Removed ${plural(imgs.value!.count, "unused image")}`);
+const alignAll = () => alignMissing(library.chapters.map((c) => c.id));
+watch(
+  () => timing.running,
+  (on) => on || loadStats(),
+);
 const clear = () =>
   cleared(clearCache(), "Cache cleared", "Audio is generated again the next time you play.");
 </script>
@@ -66,10 +79,33 @@ const clear = () =>
       >
       <button class="btn danger" :disabled="!stats?.segments" @click="clear">Clear cache</button>
       <span>Word timings</span>
-      <span
+      <span v-if="timing.running"
+        >Aligning {{ timing.done.toLocaleString() }} of
+        {{ timing.total.toLocaleString() }}…<br /><small class="h"
+          >Pauses while playback is buffering.</small
+        ></span
+      >
+      <span v-else-if="perBook?.untimed"
+        >{{ plural(perBook.untimed, "segment") }} without word timings<br /><small
+          class="h"
+          :class="{ err: timing.error }"
+          >{{
+            timing.error
+              ? `Stopped: ${timing.error}`
+              : sttProvider()
+                ? "Made while STT was off or failing; highlighting is estimated there."
+                : "Set an STT provider in Segments & timing to align them."
+          }}</small
+        ></span
+      >
+      <span v-else
         >Stored next to the audio<br /><small class="h">Cleared with the audio cache.</small></span
       >
-      <span />
+      <button v-if="timing.running" class="btn" @click="alignAll">Stop</button>
+      <button v-else-if="perBook?.untimed" class="btn" :disabled="!sttProvider()" @click="alignAll">
+        Align them
+      </button>
+      <span v-else />
       <span>Chapters</span>
       <span>{{ plural(library.chapters.length, "chapter") }}</span>
       <span />
@@ -122,6 +158,9 @@ const clear = () =>
 </template>
 
 <style scoped>
+small.err {
+  color: var(--err);
+}
 .kv {
   display: grid;
   grid-template-columns: 150px 1fr auto;

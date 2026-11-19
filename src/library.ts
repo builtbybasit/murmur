@@ -113,7 +113,7 @@ export function loadBodies(ids: string[]): Promise<void> {
       .finally(() => need.forEach((id) => loading.delete(id))); // a failure is retried next time
     for (const id of need) loading.set(id, p);
   }
-  return Promise.all(ids.map((id) => loading.get(id))).then(() => {});
+  return Promise.all(ids.map((id) => loading.get(id) ?? Promise.resolve())).then(() => {});
 }
 
 /** Fetch every missing text: the open chapter and the next ones first, a batch at a time.

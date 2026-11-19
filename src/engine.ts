@@ -63,6 +63,7 @@ interface Player {
   totalExact: boolean; // true once every segment's duration is known
   cachedCount: number; // segments of this chapter with audio ready (silent ones not counted)
   spokenCount: number; // segments with something to say: the ones that need audio
+  untimedCount: number; // cached segments without word timings (made while STT was off or failing)
   readonly error: PlayerError | null; // provider error at the current segment, else null
   skipped: Record<number, true>; // failed segments the user skipped
   stt: SttState;
@@ -83,6 +84,7 @@ export const player = reactive<Player>({
   totalExact: false,
   cachedCount: 0,
   spokenCount: 0,
+  untimedCount: 0,
   get error() {
     // skipping a failed last segment ends the list on it: that failure is behind you
     return this.status === "ended" ? null : (fails[this.seg] ?? null);
@@ -114,6 +116,7 @@ let startWord = 0; // word to start from when the current segment's audio arrive
 let raf = 0;
 let keys: string[] = []; // cache key per segment, for the current voices
 let silent = new Set<number>(); // segments with nothing to say (they play SILENCE)
+let untimed = new Set<number>(); // cached, spoken, no word timings yet
 const mem = new Map<number, Mem>(); // decoded-ready audio around the playhead
 const jobs = new Map<number, AbortController>(); // in-flight cache reads / TTS (and retry waits)
 let durs: (number | undefined)[] = [];
@@ -203,6 +206,7 @@ function updateTotals() {
   player.total = t;
   player.totalExact = n > 0 && exact;
   player.spokenCount = n - silent.size;
+  player.untimedCount = untimed.size;
   player.cachedCount = 0;
   for (const k in player.segState)
     if (player.segState[k] === "ready" && !silent.has(+k)) player.cachedCount++;
@@ -253,6 +257,7 @@ function resetWork(keep = -1) {
     }
   durs = [];
   silent = new Set();
+  untimed = new Set();
   player.segState = {};
   player.skipped = {};
 }
@@ -269,6 +274,7 @@ async function scan() {
     if (d == null) return;
     durs[i] = d;
     player.segState[i] ??= "ready";
+    if (!silent.has(i) && !es[i]!.stt) untimed.add(i);
   });
   updateTotals();
   kick();
@@ -282,6 +288,8 @@ onCached((key, e) => {
     hit = true;
     durs[i] = e.duration;
     player.segState[i] ??= "ready";
+    if (e.stt) untimed.delete(i);
+    else untimed.add(i);
     const m = mem.get(i);
     if (m && e.stt?.length && !m.times) {
       m.entry.stt = e.stt;

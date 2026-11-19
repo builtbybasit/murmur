@@ -148,6 +148,65 @@ function until(ok: () => boolean, signal: AbortSignal) {
   });
 }
 
+// ---------- word timings for audio made while STT was off or failing ----------
+
+/** The alignment job: chapters (in list order), progress, and why it stopped early. */
+export const timing = reactive({
+  running: false,
+  ids: [] as string[],
+  done: 0,
+  total: 0,
+  error: "",
+});
+let timingAc: AbortController | null = null;
+
+/**
+ * Get word timings for these chapters' cached segments that have none. One segment at a time,
+ * pausing while playback buffers; stops after 3 failures in a row. Called while running: stops.
+ */
+export async function alignMissing(ids: string[]) {
+  if (timingAc) return timingAc.abort();
+  const sp = sttProvider();
+  if (!sp) return;
+  const ac = (timingAc = new AbortController());
+  Object.assign(timing, { running: true, ids, done: 0, total: 0, error: "" });
+  try {
+    await loadBodies(ids);
+    const todo = new Set<string>(); // keys; a line repeated across chapters is aligned once
+    for (const id of ids) {
+      const c = library.chapters.find((c) => c.id === id);
+      if (!hasBody(c)) continue;
+      const keys = docOf(c).segs.filter(spoken).map(keyOf);
+      const es = await cache.getEntries(keys);
+      es.forEach((e, i) => e && !e.stt && todo.add(keys[i]!));
+    }
+    timing.total = todo.size;
+    let fails = 0;
+    for (const k of todo) {
+      await until(() => player.status !== "buffering", ac.signal);
+      const e = await cache.getEntry(k);
+      if (e && !e.stt)
+        try {
+          await align(k, e, sp, settings.stt.model, ac.signal); // onCached tells the engine
+          fails = 0;
+        } catch (err) {
+          if (ac.signal.aborted) throw err;
+          if (++fails >= 3) {
+            timing.error = `${sp.name}: ${toError(err).message}`;
+            break;
+          }
+        }
+      timing.done++;
+    }
+  } catch {
+    // stopped
+  } finally {
+    timingAc = null;
+    timing.running = false;
+    rescan(); // counts in the reader come from the cache again
+  }
+}
+
 // ---------- storage by book ----------
 
 export interface BookStorage {
@@ -165,9 +224,14 @@ export interface BookStorage {
 export async function storageByBook(): Promise<{
   books: BookStorage[];
   other: { segments: number; bytes: number; keys: string[] };
+  /** segments of the library with audio here but no word timings */
+  untimed: number;
 }> {
   await loadAllBodies(); // every chapter's segments are needed
-  const size = new Map(await cache.sizes());
+  const all = await cache.sizes();
+  const size = new Map(all.map(([k, n]) => [k, n]));
+  const timed = new Set(all.filter((x) => x[2]).map(([k]) => k));
+  let untimed = 0;
   const byBook = new Map<string, BookStorage>();
   const used = new Set<string>();
   for (const c of library.chapters) {
@@ -183,6 +247,7 @@ export async function storageByBook(): Promise<{
       b.segments++;
       if (!size.has(k) || used.has(k)) continue; // a repeated line is counted once
       used.add(k);
+      if (!timed.has(k)) untimed++;
       b.cached++;
       b.bytes += size.get(k)!;
       b.keys.push(k);
@@ -196,6 +261,7 @@ export async function storageByBook(): Promise<{
       bytes: other.reduce((n, [, v]) => n + v, 0),
       keys: other.map(([k]) => k),
     },
+    untimed,
   };
 }
 

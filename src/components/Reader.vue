@@ -9,7 +9,8 @@ import { MOD, minutes } from "@/lib/format";
 import { ui } from "@/ui";
 import { docHtml } from "@/lib/render";
 import { player, seek, pause, nextChapter, upNext } from "@/engine";
-import { genState, toggleGenerate } from "@/generate";
+import { alignMissing, genState, timing, toggleGenerate } from "@/generate";
+import { sttProvider } from "@/synth";
 import ChapterEditor from "./ChapterEditor.vue";
 
 const scroller = ref<HTMLElement | null>(null);
@@ -229,6 +230,25 @@ function onClick(e: MouseEvent) {
             @click="toggleGenerate(current.id)"
           >
             {{ player.cachedCount ? "generate the rest" : "generate all" }}
+          </button>
+          <button
+            v-if="timing.running && timing.ids.includes(current.id)"
+            class="lnk"
+            @click="alignMissing([])"
+          >
+            aligning word timings {{ timing.done }}/{{ timing.total }} · stop
+          </button>
+          <button
+            v-else-if="player.untimedCount && !timing.running && sttProvider()"
+            class="lnk"
+            :title="
+              timing.error && timing.ids.includes(current.id)
+                ? `Stopped last time: ${timing.error}`
+                : 'Audio made while STT was off or failing: highlighting is estimated there'
+            "
+            @click="alignMissing([current.id])"
+          >
+            {{ player.untimedCount }} without word timings · align
           </button>
         </div>
         <ChapterEditor v-if="editing && hasBody(current)" :chapter="current" />

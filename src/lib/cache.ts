@@ -48,6 +48,8 @@ export const putEntry = (key: string, e: CacheEntry) => set(key, e, store);
 export const dropEntry = (key: string) => del(key, store);
 export const clearAll = () => clear(store);
 export const dropEntries = (keys: string[]) => delMany(keys, store);
-/** [key, bytes] of every cached segment. */
+/** [key, bytes, has word timings] of every cached segment. */
 export const sizes = async () =>
-  (await entries<string, CacheEntry>(store)).map(([k, e]) => [k, e.blob?.size ?? 0] as const);
+  (await entries<string, CacheEntry>(store)).map(
+    ([k, e]) => [k, e.blob?.size ?? 0, !!e.stt] as const,
+  );
