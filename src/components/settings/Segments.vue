@@ -52,6 +52,7 @@ function setPrefetch(e: Event) {
     <ProviderModelFields
       v-model:provider-id="settings.stt.providerId"
       v-model:model="settings.stt.model"
+      kind="stt"
       placeholder="whisper-1"
       :disabled="!settings.stt.enabled"
     />

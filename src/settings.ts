@@ -6,13 +6,18 @@ import type { Kind } from "./lib/segment";
 import type { Rule } from "./lib/speech";
 import { DEFAULT_RULES } from "./lib/kaomoji";
 
+export type ProviderKind = "tts" | "stt";
 export interface Provider {
   id: string;
   name: string;
+  /** what you use it for: speech for the voices, or transcription for word timing */
+  kind: ProviderKind;
   baseUrl: string;
   /** typed here and not saved yet; the server keeps saved keys and sends "" with hasKey */
   apiKey: string;
   hasKey?: boolean;
+  /** one save only: tells the server to forget the saved key */
+  clearKey?: boolean;
   models: string[];
   voices: string[];
 }
@@ -48,6 +53,7 @@ export type PresetKey = "kokoro" | "openai" | "stt" | "blank";
 export const PRESETS: Record<PresetKey, Omit<Provider, "id" | "apiKey">> = {
   kokoro: {
     name: "Kokoro (local)",
+    kind: "tts",
     baseUrl: "http://localhost:8020/v1",
     models: ["kokoro"],
     voices: [
@@ -64,17 +70,19 @@ export const PRESETS: Record<PresetKey, Omit<Provider, "id" | "apiKey">> = {
   },
   openai: {
     name: "OpenAI",
+    kind: "tts",
     baseUrl: "https://api.openai.com/v1",
-    models: ["gpt-4o-mini-tts", "tts-1", "tts-1-hd", "whisper-1"],
+    models: ["gpt-4o-mini-tts", "tts-1", "tts-1-hd"],
     voices: ["alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer"],
   },
   stt: {
     name: "Local STT",
+    kind: "stt",
     baseUrl: "http://localhost:8010/v1",
     models: ["FermionResearch/Phonon-2"],
     voices: [],
   },
-  blank: { name: "New provider", baseUrl: "", models: [], voices: [] },
+  blank: { name: "New provider", kind: "tts", baseUrl: "", models: [], voices: [] },
 };
 
 export const FONTS: Record<FontKey, { label: string; css: string }> = {
@@ -115,6 +123,9 @@ export function loadSettings(s: Partial<Settings> | null) {
     stt: { ...d.stt, ...s.stt },
     speech: { ...d.speech, ...s.speech },
   });
+  // from before providers had a kind: STT if alignment is all it is used for
+  for (const p of settings.providers)
+    p.kind ??= rolesOf(p.id).join() === "alignment" ? "stt" : "tts";
 }
 
 /** This browser's own settings. */
@@ -203,11 +214,12 @@ export function setSame(role: "dialogue" | "system", same: boolean) {
   }
 }
 
-export function addProvider(preset: PresetKey = "blank"): Provider {
+export function addProvider(preset: PresetKey = "blank", kind = PRESETS[preset].kind): Provider {
   const p = PRESETS[preset];
   const prov: Provider = {
     id: "p" + crypto.randomUUID().slice(0, 8),
     name: p.name,
+    kind,
     baseUrl: p.baseUrl,
     apiKey: "",
     models: [...p.models],
@@ -215,25 +227,29 @@ export function addProvider(preset: PresetKey = "blank"): Provider {
   };
   settings.providers.push(prov);
   // first provider fills empty roles so a fresh install can play immediately
-  if (!settings.narration.providerId && preset !== "stt") {
+  if (kind === "tts" && !settings.narration.providerId) {
     Object.assign(settings.narration, {
       providerId: prov.id,
       model: prov.models[0] ?? "",
       voice: prov.voices[0] ?? "",
     });
   }
-  if (!settings.stt.providerId && (preset === "stt" || preset === "openai")) {
-    Object.assign(settings.stt, {
-      providerId: prov.id,
-      model: preset === "openai" ? "whisper-1" : (prov.models[0] ?? "whisper-1"),
-    });
-  }
+  if (kind === "stt" && !settings.stt.providerId)
+    Object.assign(settings.stt, { providerId: prov.id, model: prov.models[0] ?? "whisper-1" });
   return settings.providers.at(-1)!;
 }
 
-export function removeProvider(id: string) {
+/** Remove a provider and unassign it; returns an undo that puts both back. */
+export function removeProvider(id: string): () => void {
   const i = settings.providers.findIndex((p) => p.id === id);
-  if (i >= 0) settings.providers.splice(i, 1);
-  for (const r of [settings.narration, settings.dialogue, settings.system, settings.stt])
-    if (r.providerId === id) r.providerId = null;
+  if (i < 0) return () => {};
+  const [p] = settings.providers.splice(i, 1);
+  const roles = [settings.narration, settings.dialogue, settings.system, settings.stt].filter(
+    (r) => r.providerId === id,
+  );
+  for (const r of roles) r.providerId = null;
+  return () => {
+    settings.providers.splice(Math.min(i, settings.providers.length), 0, p!);
+    for (const r of roles) r.providerId ??= id;
+  };
 }

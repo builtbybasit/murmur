@@ -16,6 +16,7 @@ const onMac = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
     <button
       class="ib"
       data-side-toggle
+      :disabled="ui.view === 'settings'"
       title="Toggle chapters (B)"
       aria-label="Toggle chapter list"
       @click="toggleSide"

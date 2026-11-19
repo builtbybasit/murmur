@@ -148,6 +148,7 @@ interface Provider {
   baseUrl: string;
   apiKey?: string;
   hasKey?: boolean;
+  clearKey?: boolean;
 }
 type Settings = { providers?: Provider[] } & Record<string, unknown>;
 let settings: Settings | null | undefined;
@@ -166,15 +167,21 @@ const masked = (s: Settings | null) =>
     })),
   };
 
-/** A browser sends "" for a key it did not change: keep the saved one. */
+// ponytail: keys of removed providers stay in memory until restart, so Undo can bring them back
+const removedKeys = new Map<string, string>();
+
+/** A browser sends "" for a key it did not change: keep the saved one. clearKey: true clears it. */
 function saveSettings(next: Settings) {
   if (typeof next !== "object" || !next || !Array.isArray(next.providers ?? []))
     throw new Error("settings must be an object with a providers list");
   const old = new Map((loadSettings()?.providers ?? []).map((p) => [p.id, p.apiKey]));
-  next.providers = (next.providers ?? []).map(({ hasKey: _h, ...p }) => ({
-    ...p,
-    apiKey: p.apiKey || old.get(p.id) || "",
-  }));
+  next.providers = (next.providers ?? []).map(({ hasKey: _h, clearKey, ...p }) => {
+    const saved = old.has(p.id) ? old.get(p.id) : removedKeys.get(p.id); // back from Undo
+    removedKeys.delete(p.id);
+    return { ...p, apiKey: p.apiKey || (clearKey ? "" : saved) || "" };
+  });
+  const kept = new Set(next.providers.map((p) => p.id));
+  for (const [id, key] of old) if (!kept.has(id) && key) removedKeys.set(id, key);
   delete next.lastChapterId; // from the old format
   writeAtomic(file("settings.json"), JSON.stringify(next));
   settings = next;

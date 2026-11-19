@@ -69,6 +69,7 @@ async function doPreview(role: Role) {
         <ProviderModelFields
           v-model:provider-id="settings[r.key].providerId"
           v-model:model="settings[r.key].model"
+          kind="tts"
           placeholder="tts-1"
           @change="providerChanged(r.key)"
         />

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 // Provider <select> + model input with that provider's models as suggestions. Goes inside a `.f`.
 import { useId } from "vue";
-import { settings, providerById } from "../../settings";
+import { settings, providerById, type ProviderKind } from "../../settings";
 
-defineProps<{ placeholder: string; disabled?: boolean }>();
+defineProps<{ kind: ProviderKind; placeholder: string; disabled?: boolean }>();
 defineEmits<{ change: [] }>();
 const providerId = defineModel<string | null>("providerId", { required: true });
 const model = defineModel<string>("model", { required: true });
@@ -13,11 +13,15 @@ const list = useId();
 <template>
   <label
     >Provider<select v-model="providerId" :disabled="disabled" @change="$emit('change')">
-      <option v-if="!settings.providers.length" :value="null">No providers yet</option>
+      <option v-if="!settings.providers.some((p) => p.kind === kind)" :value="null">
+        No {{ kind.toUpperCase() }} providers yet
+      </option>
       <option v-else-if="!providerById(providerId)" :value="providerId" disabled>
         Choose a provider
       </option>
-      <option v-for="p in settings.providers" :key="p.id" :value="p.id">{{ p.name }}</option>
+      <template v-for="p in settings.providers" :key="p.id">
+        <option v-if="p.kind === kind || p.id === providerId" :value="p.id">{{ p.name }}</option>
+      </template>
     </select></label
   >
   <label

@@ -62,8 +62,8 @@ useEventListener(document, "keydown", (e: KeyboardEvent) => {
 <template>
   <div class="app">
     <TopBar />
-    <div class="mid" :class="{ noside: !device.sidebarOpen }">
-      <Sidebar />
+    <div class="mid" :class="{ noside: !device.sidebarOpen || ui.view === 'settings' }">
+      <Sidebar v-if="ui.view !== 'settings'" />
       <main>
         <Settings v-if="ui.view === 'settings'" />
         <Onboarding v-else-if="!library.chapters.length" />

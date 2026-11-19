@@ -40,6 +40,7 @@ watch(
 export const narrow = useMediaQuery("(max-width: 820px)");
 
 export function toggleSide() {
+  if (ui.view === "settings") return; // Settings has no chapter list
   if (narrow.value) ui.sidebarDrawer = !ui.sidebarDrawer;
   else device.sidebarOpen = !device.sidebarOpen;
 }
