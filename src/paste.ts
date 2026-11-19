@@ -1,8 +1,10 @@
 // Adding chapters from the clipboard, with the toasts from DESIGN.md section 2.
 import { addChapter, docOf, toast, ui, undo } from "./store";
+import { htmlToMarkdown } from "./lib/markdown";
 
-export function addFromText(text: string | null | undefined) {
-  const r = addChapter(text);
+/** Web pages put HTML on the clipboard too: keep its bold, italics, tables and scene breaks. */
+export function addFromText(text: string | null | undefined, html?: string | null) {
+  const r = addChapter((html && htmlToMarkdown(html).trim()) || text);
   if (r.status === "empty")
     return toast({ title: "Nothing to add", sub: "The clipboard is empty" });
   if (r.status === "dup") return toast({ title: "Already in the list", sub: r.chapter!.title });
@@ -23,7 +25,10 @@ export function addFromText(text: string | null | undefined) {
 
 export async function pasteFromClipboard() {
   try {
-    addFromText(await navigator.clipboard.readText());
+    const [item] = await navigator.clipboard.read();
+    const get = async (t: string) =>
+      item?.types.includes(t) ? (await item.getType(t)).text() : null;
+    addFromText(await get("text/plain"), await get("text/html"));
   } catch {
     toast({ title: "The browser blocked clipboard access", sub: "Press ⌘V instead" });
   }

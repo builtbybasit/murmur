@@ -38,7 +38,7 @@ const inField = (t: EventTarget | null) =>
 useEventListener(document, "paste", (e: ClipboardEvent) => {
   if (inField(e.target)) return;
   e.preventDefault();
-  addFromText(e.clipboardData?.getData("text/plain"));
+  addFromText(e.clipboardData?.getData("text/plain"), e.clipboardData?.getData("text/html"));
 });
 
 const speed = (d: number) => engine.setSpeed(Math.round((settings.speed + d) * 10) / 10);

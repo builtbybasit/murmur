@@ -12,6 +12,7 @@ import {
   toast,
   CHARS_PER_SEC,
 } from "../store";
+import type { Seg, Word } from "../lib/segment";
 import { player, seek, nextChapter } from "../engine";
 
 const scroller = ref<HTMLElement | null>(null);
@@ -21,24 +22,65 @@ const doc = computed(() => currentDoc.value || null);
 const esc = (s: string) =>
   s.replace(/[&<>]/g, (c) => (c === "&" ? "&amp;" : c === "<" ? "&lt;" : "&gt;"));
 
+const attr = (s: string) => esc(s).replace(/"/g, "&quot;");
+const wordHtml = (w: Word, k: number) =>
+  `<span class="w${w.m ? " " + w.m : ""}" data-w="${k}">${esc(w.t)}</span>`;
+
+/** One segment's words with the text between them; a table row renders one part per cell. */
+function segHtml(s: Seg, cell?: number) {
+  let out = `<span class="seg ${s.kind}" data-s="${s.i}">`;
+  let at = cell === undefined ? 0 : -1; // a cell shows only the text between its own words
+  s.words.forEach((w, k) => {
+    if (cell !== undefined && w.cell !== cell) return;
+    if (at >= 0) out += esc(s.core.slice(at, w.c));
+    out += wordHtml(w, k);
+    at = w.c + w.t.length;
+  });
+  if (cell === undefined) out += esc(s.core.slice(at));
+  return out + "</span>";
+}
+
 const html = computed(() => {
   const d = doc.value;
   if (!d) return "";
   let out = "";
-  for (const idx of d.paras) {
-    out += "<p>";
+  let quote = false;
+  let table = 0;
+  d.paras.forEach((idx, pi) => {
+    const b = d.blocks[pi]!;
+    if (table && table !== b.table) {
+      out += "</table>";
+      table = 0;
+    }
+    if (!!b.quote !== quote) {
+      quote = !quote;
+      out += quote ? "<blockquote>" : "</blockquote>";
+    }
+    if (b.rule) out += "<hr>";
+    if (b.tag === "tr") {
+      if (!table) out += "<table>";
+      table = b.table!;
+      const s = d.segs[idx[0]!]!;
+      const c = b.head ? "th" : "td";
+      out += "<tr>";
+      for (let k = 0; k < b.cells!; k++) out += `<${c}>${segHtml(s, k)}</${c}>`;
+      out += "</tr>";
+      return;
+    }
+    out +=
+      b.tag === "h"
+        ? '<p class="hd">'
+        : b.tag === "li"
+          ? `<p class="li" data-n="${attr(b.n!)}">`
+          : "<p>";
     for (const si of idx) {
       const s = d.segs[si]!;
-      out += esc(s.lead) + `<span class="seg ${s.kind}" data-s="${si}">`;
-      let at = 0;
-      s.words.forEach((w, k) => {
-        out += esc(s.core.slice(at, w.c)) + `<span class="w" data-w="${k}">${esc(w.t)}</span>`;
-        at = w.c + w.t.length;
-      });
-      out += esc(s.core.slice(at)) + "</span>" + esc(s.trail);
+      out += esc(s.lead) + segHtml(s) + esc(s.trail);
     }
     out += "</p>";
-  }
+  });
+  if (table) out += "</table>";
+  if (quote) out += "</blockquote>";
   return out;
 });
 
@@ -93,9 +135,11 @@ const nextCh = computed(() => {
 });
 
 // ---------- highlight ----------
-let segEls: HTMLElement[] = [];
+// a segment is one element, or one per table cell; words are listed across its parts
+let segEls: HTMLElement[][] = [];
+let wordEls: Element[][] = [];
 let queriedFor = "";
-let elSeg: HTMLElement | null = null;
+let elSeg: HTMLElement[] | null = null;
 let elWord: Element | null = null;
 let elPara: Element | null = null;
 let badEls: Element[] = [];
@@ -103,7 +147,13 @@ let badEls: Element[] = [];
 function els() {
   if (queriedFor !== html.value && textEl.value) {
     queriedFor = html.value;
-    segEls = Array.from(textEl.value.querySelectorAll<HTMLElement>(".seg"));
+    segEls = [];
+    wordEls = [];
+    for (const e of textEl.value.querySelectorAll<HTMLElement>(".seg")) {
+      const i = +e.dataset.s!;
+      (segEls[i] ??= []).push(e);
+      (wordEls[i] ??= []).push(...e.children);
+    }
     elSeg = elWord = elPara = null;
     badEls = [];
   }
@@ -120,12 +170,7 @@ const badList = computed(() => {
 function paintBad() {
   const list = els();
   for (const e of badEls) e.classList.remove("bad");
-  badEls = badList.value
-    ? badList.value
-        .split(",")
-        .map((i) => list[+i]!)
-        .filter(Boolean)
-    : [];
+  badEls = badList.value ? badList.value.split(",").flatMap((i) => list[+i] ?? []) : [];
   for (const e of badEls) e.classList.add("bad");
 }
 
@@ -135,25 +180,27 @@ function paint() {
   if (!d || !list.length) return;
   const on = player.started;
   const si = Math.min(list.length - 1, Math.max(0, on ? player.seg : (current.value?.pos ?? 0)));
-  const se = list[si]!;
-  const pe = se.parentElement;
+  const parts = list[si] ?? [];
+  const se = parts[0];
+  if (!se) return;
+  const pe = se.closest("tr") ?? se.parentElement;
   if (pe !== elPara) {
     elPara?.classList.remove("curp");
     pe?.classList.add("curp");
     elPara = pe;
   }
   let moved = false;
-  if (se !== elSeg) {
-    elSeg?.classList.remove("cur", "wait");
-    elSeg = se;
+  if (parts !== elSeg) {
+    for (const e of elSeg ?? []) e.classList.remove("cur", "wait");
+    elSeg = parts;
     moved = true;
   }
-  se.classList.toggle("cur", on);
-  se.classList.toggle(
-    "wait",
-    on && player.status === "buffering" && player.segState[si] === "loading",
-  );
-  const we = on && player.word >= 0 ? (se.children[player.word] ?? null) : null;
+  const wait = on && player.status === "buffering" && player.segState[si] === "loading";
+  for (const e of parts) {
+    e.classList.toggle("cur", on);
+    e.classList.toggle("wait", wait);
+  }
+  const we = on && player.word >= 0 ? (wordEls[si]?.[player.word] ?? null) : null;
   if (we !== elWord) {
     elWord?.classList.remove("now", "al");
     we?.classList.add("now");
@@ -184,7 +231,7 @@ const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** Keep the current word between 12% and 72% of the view; when it leaves, put it at 30%. */
 function reveal(instant = false) {
-  const el = elWord ?? elSeg,
+  const el = elWord ?? elSeg?.[0],
     sc = scroller.value;
   if (!el || !sc) return;
   const r = el.getBoundingClientRect(),
@@ -270,7 +317,11 @@ function onClick(e: MouseEvent) {
             @keydown="onEditKey"
           />
           <div class="edit-bar">
-            <span>Blank lines separate paragraphs. Unchanged paragraphs keep their audio.</span>
+            <span
+              >Each line is a paragraph. <code>**bold**</code> <code>*italic*</code>
+              <code>~~strike~~</code> <code>&gt; box</code> <code>***</code> scene break. Unchanged
+              paragraphs keep their audio.</span
+            >
             <span class="sp" />
             <button class="btn ghost" @click="ui.editingId = null">Cancel <kbd>Esc</kbd></button>
             <button class="btn pri" @click="saveEdit">Save <kbd>⌘↵</kbd></button>
@@ -380,6 +431,65 @@ function onClick(e: MouseEvent) {
   position: relative;
   text-wrap: pretty;
   hanging-punctuation: first;
+}
+.text :deep(p.hd) {
+  margin-top: 1.3em;
+  font-size: 1.15em;
+  font-weight: 700;
+  color: var(--ink-hi);
+}
+.text :deep(p.li) {
+  padding-left: 1.6em;
+}
+.text :deep(p.li)::after {
+  content: attr(data-n);
+  position: absolute;
+  left: 0.2em;
+  top: 0;
+  color: var(--ink3);
+}
+.text :deep(blockquote) {
+  margin: 0 0 0.85em;
+  padding: 0.7em 1em 0.1em;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line2);
+  border-radius: var(--r2);
+  background: var(--surface);
+}
+.text :deep(hr) {
+  width: 30%;
+  margin: 1.8em auto;
+  border: 0;
+  border-top: 1px solid var(--line2);
+}
+.text :deep(table) {
+  margin: 0 0 1em;
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+.text :deep(td),
+.text :deep(th) {
+  padding: 0.25em 0.8em;
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+.text :deep(th) {
+  background: var(--surface);
+}
+.text :deep(.w.b),
+.text :deep(th .w) {
+  font-weight: 700;
+}
+.text :deep(.w.i) {
+  font-style: italic;
+}
+.text :deep(.w.s) {
+  text-decoration: line-through;
+}
+.text :deep(.w.c) {
+  font-family: var(--mono);
+  font-size: 0.9em;
 }
 .text :deep(p.curp)::before {
   content: "";

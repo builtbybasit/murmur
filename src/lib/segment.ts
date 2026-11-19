@@ -1,9 +1,15 @@
 // Text -> paragraphs -> narration/dialogue segments -> words. Pure, no Vue.
+import { markdownLines, plainTitle, type Block, type Span } from "./markdown";
+export type { Block };
 
 export type Kind = "narr" | "dlg";
 export interface Word {
   t: string;
   c: number;
+  /** formatting classes ("b i"), from Markdown chapters */
+  m?: string;
+  /** table cell index, for table rows */
+  cell?: number;
 }
 export interface Seg {
   i: number;
@@ -17,6 +23,8 @@ export interface Seg {
 }
 export interface Doc {
   paras: number[][];
+  /** how each paragraph is shown (parallel to paras) */
+  blocks: Block[];
   segs: Seg[];
   words: number;
   chars: number;
@@ -77,42 +85,83 @@ export function segmentPara(p: string, smart = true): { kind: Kind; text: string
 
 /**
  * Chapter body -> doc.
- * doc = { paras: number[][] (segment indexes per paragraph), segs, words, chars }
- * seg = { i, para, kind, text, core, lead, trail, words: [{ t, c }] }
+ * doc = { paras: number[][] (segment indexes per paragraph), blocks, segs, words, chars }
+ * seg = { i, para, kind, text, core, lead, trail, words: [{ t, c, m?, cell? }] }
  *   core = trimmed text (what is sent to TTS), lead/trail = surrounding whitespace,
- *   word.c = char offset of the word inside core.
+ *   word.c = char offset of the word inside core, word.m = formatting classes.
+ * The body is Markdown; every line is its own paragraph.
  */
 export function buildDoc(body: string, smart = true): Doc {
   const paras: number[][] = [];
+  const blocks: Block[] = [];
   const segs: Seg[] = [];
   let words = 0;
   let chars = 0;
-  for (const p of body
-    .split(/\n+/)
-    .map((s) => s.trim())
-    .filter(Boolean)) {
+  const push = (kind: Kind, text: string, core: string, ws: Word[], idx: number[]) => {
+    idx.push(segs.length);
+    segs.push({
+      i: segs.length,
+      para: paras.length,
+      kind,
+      text,
+      core,
+      lead: text.match(/^\s*/)![0],
+      trail: text.match(/\s*$/)![0],
+      words: ws,
+    });
+    words += ws.length;
+    chars += core.length;
+  };
+  const para = ({ text: p, marks }: Span) => {
     const idx: number[] = [];
+    let off = 0;
     for (const { kind, text } of segmentPara(p, smart)) {
       const core = text.trim();
+      const at = off + text.length - text.trimStart().length;
       const ws: Word[] = [];
-      for (const m of core.matchAll(/\S+/g)) ws.push({ t: m[0], c: m.index! });
-      idx.push(segs.length);
-      segs.push({
-        i: segs.length,
-        para: paras.length,
-        kind,
-        text,
-        core,
-        lead: text.match(/^\s*/)![0],
-        trail: text.match(/\s*$/)![0],
-        words: ws,
-      });
-      words += ws.length;
-      chars += core.length;
+      for (const m of core.matchAll(/\S+/g)) {
+        const w: Word = { t: m[0], c: m.index! };
+        if (marks[at + w.c]) w.m = marks[at + w.c];
+        ws.push(w);
+      }
+      push(kind, text, core, ws, idx);
+      off += text.length;
     }
-    paras.push(idx);
+    return idx;
+  };
+  // a table row is one narration segment: "Strength, 12", words keep their cell
+  const row = (cells: Span[]) => {
+    let core = "";
+    const ws: Word[] = [];
+    cells.forEach(({ text, marks }, cell) => {
+      const t = text.trim();
+      if (!t) return;
+      if (core) core += /[,.:;!?]$/.test(core) ? " " : ", ";
+      const at = text.length - text.trimStart().length;
+      for (const m of t.matchAll(/\S+/g)) {
+        const w: Word = { t: m[0], c: core.length + m.index!, cell };
+        if (marks[at + m.index!]) w.m = marks[at + m.index!];
+        ws.push(w);
+      }
+      core += t;
+    });
+    const idx: number[] = [];
+    push("narr", core, core, ws, idx);
+    return idx;
+  };
+
+  for (const { block, parts } of markdownLines(body)) {
+    if (block.tag === "tr") paras.push(row(parts));
+    else {
+      const s = parts[0]!;
+      const lead = s.text.length - s.text.trimStart().length;
+      paras.push(
+        para({ text: s.text.trim(), marks: s.marks.slice(lead, lead + s.text.trim().length) }),
+      );
+    }
+    blocks.push(block);
   }
-  return { paras, segs, words, chars };
+  return { paras, blocks, segs, words, chars };
 }
 
 /** Normalise pasted text: line endings, trailing spaces, 3+ newlines. */
@@ -129,7 +178,8 @@ export function autoTitle(
   existingTitles: string[] = [],
 ): { title: string; body: string } {
   const nl = text.indexOf("\n");
-  const first = (nl < 0 ? text : text.slice(0, nl)).trim();
+  const line = (nl < 0 ? text : text.slice(0, nl)).trim();
+  const first = plainTitle(line);
   const rest = nl < 0 ? "" : text.slice(nl + 1).trim();
   const heading =
     /^(chapter|ch\.?|episode|ep\.?|part|book|volume|vol\.?|prologue|epilogue|interlude|side story)\b/i.test(
