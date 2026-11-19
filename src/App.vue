@@ -82,6 +82,8 @@ useEventListener(document, "keydown", (e: KeyboardEvent) => {
   height: 100%;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
+  /* never wider than the screen: an auto column grew with the player's status text */
+  grid-template-columns: minmax(0, 1fr);
 }
 .mid {
   display: grid;
