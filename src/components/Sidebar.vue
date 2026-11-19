@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
-import { onClickOutside, useMediaQuery } from "@vueuse/core";
+import { computed, nextTick, reactive, ref, watch } from "vue";
+import { onClickOutside, onKeyStroke, useMediaQuery } from "@vueuse/core";
 import {
   CircleCheck,
   Clock,
@@ -9,6 +9,7 @@ import {
   GripVertical,
   Trash2,
   TriangleAlert,
+  X,
 } from "@lucide/vue";
 import {
   settings,
@@ -18,7 +19,8 @@ import {
   CHARS_PER_SEC,
   renameChapter,
   moveChapter,
-  deleteChapter,
+  moveChapters,
+  deleteChapters,
   toast,
   type Chapter,
 } from "../store";
@@ -60,6 +62,50 @@ const focusRow = (id?: string) => id && nextTick(() => rowEl(id)?.focus());
 onClickOutside(side, () => (ui.sidebarDrawer = false), {
   ignore: ["[data-side-toggle]", ".toast"],
 });
+
+// ---- multi-select: Shift-click = range from the open (or last clicked) chapter, ⌘/Ctrl-click = toggle ----
+const sel = reactive(new Set<string>());
+let anchor: string | null = null;
+const ids = () => library.chapters.map((c) => c.id);
+function onRowClick(e: MouseEvent, c: Chapter) {
+  if (ui.renamingId === c.id) return;
+  const from = anchor ?? ui.currentId;
+  if (e.shiftKey && from) {
+    const all = ids();
+    const [a, b] = [all.indexOf(from), all.indexOf(c.id)].sort((x, y) => x - y);
+    sel.clear();
+    for (const id of all.slice(Math.max(0, a!), b! + 1)) sel.add(id);
+    anchor = from;
+  } else if (e.metaKey || e.ctrlKey) {
+    if (!sel.size && ui.currentId && ui.currentId !== c.id) sel.add(ui.currentId);
+    if (sel.has(c.id)) sel.delete(c.id);
+    else sel.add(c.id);
+    anchor = c.id;
+  } else {
+    sel.clear();
+    anchor = null;
+    openRow(c.id);
+  }
+}
+onKeyStroke("Escape", () => sel.clear());
+// selected chapters in list order (ids of deleted chapters drop out)
+const picked = () => library.chapters.filter((c) => sel.has(c.id));
+
+function bulkGenerate() {
+  const list = picked().filter(
+    (c) => generating[c.id]?.state !== "queued" && generating[c.id]?.state !== "running",
+  );
+  for (const c of list) toggleGenerate(c.id);
+  sel.clear();
+  toast(
+    { title: `Generating audio for ${list.length} chapter${list.length === 1 ? "" : "s"}` },
+    3000,
+  );
+}
+function bulkDelete() {
+  removeChapters(picked());
+  sel.clear();
+}
 
 function openRow(id: string) {
   open(id);
@@ -110,24 +156,45 @@ function endRename(id: string, value: string | null) {
   focusRow(id);
 }
 
-function del(c: Chapter) {
-  const wasCurrent = ui.currentId === c.id;
-  deleteChapter(c.id);
+function removeChapters(cs: Chapter[]) {
+  if (!cs.length) return;
+  const wasCurrent = cs.some((c) => c.id === ui.currentId);
+  for (const c of cs) {
+    const s = generating[c.id]?.state;
+    if (s === "queued" || s === "running") toggleGenerate(c.id); // stop its background job
+  }
+  deleteChapters(cs.map((c) => c.id));
   if (wasCurrent && ui.currentId) open(ui.currentId);
   toast({
-    title: `Deleted “${c.title}”`,
-    sub: "Its cached audio is kept until you clear the cache.",
+    title: cs.length === 1 ? `Deleted “${cs[0]!.title}”` : `Deleted ${cs.length} chapters`,
+    sub: "Cached audio is kept until you clear the cache.",
     actions: [{ label: "Undo", run: undoWithToast }],
   });
 }
+const del = (c: Chapter) => removeChapters([c]);
 
 // ---- drag to reorder ----
 const dragId = ref<string | null>(null);
 const drop = ref<{ id: string; after: boolean } | null>(null);
+// dragging a selected row moves the whole selection
+const dragging = () =>
+  dragId.value && sel.has(dragId.value) ? picked().map((c) => c.id) : [dragId.value!];
 function onDragStart(e: DragEvent, id: string) {
   dragId.value = id;
-  e.dataTransfer!.effectAllowed = "move";
-  e.dataTransfer!.setData("text/plain", id); // Firefox will not start a drag without data
+  const dt = e.dataTransfer!;
+  dt.effectAllowed = "move";
+  dt.setData("text/plain", id); // Firefox will not start a drag without data
+  const n = dragging().length;
+  if (n > 1) {
+    // one small label instead of the row's ghost: "3 chapters"
+    const tag = Object.assign(document.createElement("div"), {
+      className: "drag-tag",
+      textContent: `${n} chapters`,
+    });
+    document.body.append(tag);
+    dt.setDragImage(tag, 12, 12);
+    setTimeout(() => tag.remove());
+  }
 }
 function onDragOver(e: DragEvent, id: string) {
   if (!dragId.value) return;
@@ -136,14 +203,10 @@ function onDragOver(e: DragEvent, id: string) {
   drop.value = { id, after: e.clientY > b.top + b.height / 2 };
 }
 function onDrop(e: DragEvent) {
-  const id = dragId.value,
-    d = drop.value;
-  if (!id || !d) return;
+  const d = drop.value;
+  if (!dragId.value || !d) return;
   e.preventDefault();
-  const idx = (x: string) => library.chapters.findIndex((c) => c.id === x);
-  let to = idx(d.id) + (d.after ? 1 : 0);
-  if (idx(id) < to) to--;
-  moveChapter(id, to);
+  moveChapters(dragging(), d.id, d.after);
   onDragEnd();
 }
 function onDragEnd() {
@@ -165,6 +228,7 @@ function onRowKey(e: KeyboardEvent, c: Chapter, i: number) {
     )?.focus();
   } else if (k === "Enter") openRow(c.id);
   else if (k === "F2") ui.renamingId = c.id;
+  else if ((k === "Delete" || k === "Backspace") && sel.has(c.id) && sel.size > 1) bulkDelete();
   else if (k === "Delete" || k === "Backspace") {
     del(c);
     focusRow((library.chapters[i] ?? library.chapters.at(-1))?.id);
@@ -195,6 +259,7 @@ function pickEpub(e: Event) {
         class="row"
         :class="{
           on: c.id === ui.currentId,
+          sel: sel.has(c.id),
           flash: c.id === flashing,
           'drop-a': drop?.id === c.id && drop.after,
           'drop-b': drop?.id === c.id && !drop.after,
@@ -203,7 +268,7 @@ function pickEpub(e: Event) {
         tabindex="0"
         :draggable="ui.renamingId !== c.id"
         :title="`${c.title} · ${docOf(c).words.toLocaleString()} words`"
-        @click="ui.renamingId !== c.id && openRow(c.id)"
+        @click="onRowClick($event, c)"
         @keydown="onRowKey($event, c, i)"
         @dragstart="onDragStart($event, c.id)"
         @dragover="onDragOver($event, c.id)"
@@ -294,7 +359,25 @@ function pickEpub(e: Event) {
         Chapters you paste appear here, in the order you paste them.
       </li>
     </ol>
-    <div class="slot">
+    <div v-if="sel.size" class="bulk" role="toolbar" aria-label="Selected chapters">
+      <b class="num">{{ sel.size }} selected</b>
+      <span class="sp" />
+      <button class="btn" title="Generate audio for each, in list order" @click="bulkGenerate">
+        <Download :size="13" /> Audio
+      </button>
+      <button class="btn" title="Delete the selected chapters (⌫)" @click="bulkDelete">
+        <Trash2 :size="13" /> Delete
+      </button>
+      <button
+        class="ib"
+        title="Clear selection (Esc)"
+        aria-label="Clear selection"
+        @click="sel.clear()"
+      >
+        <X :size="14" />
+      </button>
+    </div>
+    <div v-else class="slot">
       <div class="slot-t"><span>Paste next chapter</span><kbd>{{ MOD }}V</kbd></div>
       <div class="slot-s">
         Works anywhere in the app. One chapter per paste; the title comes from its first line.
@@ -339,6 +422,7 @@ function pickEpub(e: Event) {
   letter-spacing: 0;
 }
 .list {
+  user-select: none; /* shift-click selects chapters, not text */
   list-style: none;
   margin: 0;
   padding: 0 6px;
@@ -363,6 +447,35 @@ function pickEpub(e: Event) {
 }
 .row:hover {
   background: var(--hover);
+}
+.row.sel {
+  background: color-mix(in srgb, var(--acc) 7%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--acc) 55%, transparent);
+}
+.bulk {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 8px 6px;
+  padding: 6px 4px 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--acc) 40%, var(--line));
+  border-radius: var(--r3);
+  background: color-mix(in srgb, var(--acc) 7%, var(--surface));
+}
+.bulk b {
+  font: 600 12px var(--ui);
+  color: var(--ink-hi);
+  white-space: nowrap;
+}
+.bulk .btn {
+  padding: 0 7px;
+  gap: 4px;
+  font-size: 12px;
+}
+.bulk .ib {
+  flex: none;
+  width: 24px;
+  height: 24px;
 }
 .row.on {
   background: color-mix(in srgb, var(--acc) 13%, transparent);

@@ -198,3 +198,15 @@ svg {
     transition: none !important;
   }
 }
+
+/* drag image when moving several chapters (Sidebar) */
+.drag-tag {
+  position: fixed;
+  top: -100px;
+  left: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--acc);
+  color: var(--on-acc);
+  font: 600 12px var(--ui);
+}

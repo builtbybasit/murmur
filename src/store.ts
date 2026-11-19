@@ -322,7 +322,8 @@ export function removeProvider(id: string) {
 // ---------- chapters ----------
 
 type UndoKind = "add" | "import" | "delete";
-let undoEntry: { kind: UndoKind; chapters: Chapter[]; index: number } | null = null;
+/** at: original list positions of deleted chapters (ascending) */
+let undoEntry: { kind: UndoKind; chapters: Chapter[]; at: number[] } | null = null;
 
 /**
  * Add a pasted chapter at the end.
@@ -354,7 +355,7 @@ export function addChapter(rawIn: string | null | undefined): {
     pos: 0,
   });
   const ch = library.chapters.at(-1)!;
-  undoEntry = { kind: "add", chapters: [ch], index: library.chapters.length - 1 };
+  undoEntry = { kind: "add", chapters: [ch], at: [] };
   ui.flashId = ch.id;
   if (!ui.currentId) ui.currentId = ch.id; // the very first chapter opens itself
   return { status: "added", chapter: ch };
@@ -382,14 +383,38 @@ export function moveChapter(id: string, to: number) {
   library.chapters.splice(to, 0, c!);
 }
 
-export function deleteChapter(id: string): Chapter | undefined {
-  const index = library.chapters.findIndex((c) => c.id === id);
-  if (index < 0) return;
-  const [chapter] = library.chapters.splice(index, 1);
-  undoEntry = { kind: "delete", chapters: [chapter!], index };
-  if (ui.currentId === id)
-    ui.currentId = (library.chapters[index] ?? library.chapters[index - 1])?.id ?? null;
-  return chapter;
+/** Delete chapters as one undo step; the open one moves to the next chapter left. */
+export function deleteChapters(ids: string[]): Chapter[] {
+  const gone = new Set(ids);
+  const at: number[] = [];
+  const chapters: Chapter[] = [];
+  library.chapters.forEach((c, i) => {
+    if (!gone.has(c.id)) return;
+    at.push(i);
+    chapters.push(c);
+  });
+  if (!chapters.length) return [];
+  const cur = library.chapters.findIndex((c) => c.id === ui.currentId);
+  library.chapters = library.chapters.filter((c) => !gone.has(c.id));
+  undoEntry = { kind: "delete", chapters, at };
+  if (ui.currentId && gone.has(ui.currentId)) {
+    const k = cur - at.filter((i) => i < cur).length; // where it was, among the survivors
+    ui.currentId = (library.chapters[k] ?? library.chapters[k - 1])?.id ?? null;
+  }
+  return chapters;
+}
+export const deleteChapter = (id: string): Chapter | undefined => deleteChapters([id])[0];
+
+/** Move chapters (kept in list order) before or after another chapter. */
+export function moveChapters(ids: string[], target: string, after: boolean) {
+  if (ids.includes(target)) return;
+  const set = new Set(ids);
+  const moving = library.chapters.filter((c) => set.has(c.id));
+  const rest = library.chapters.filter((c) => !set.has(c.id));
+  const t = rest.findIndex((c) => c.id === target);
+  if (t < 0 || !moving.length) return;
+  rest.splice(t + (after ? 1 : 0), 0, ...moving);
+  library.chapters = rest;
 }
 
 /** Undo the last add or delete. Returns the entry kind, or null if nothing to undo. */
@@ -397,7 +422,7 @@ export function undo(): UndoKind | null {
   const e = undoEntry;
   if (!e) return null;
   undoEntry = null;
-  if (e.kind === "delete") library.chapters.splice(e.index, 0, ...e.chapters);
+  if (e.kind === "delete") e.chapters.forEach((c, j) => library.chapters.splice(e.at[j]!, 0, c));
   else for (const c of e.chapters) deleteChapterQuiet(c.id);
   return e.kind;
 }
@@ -417,7 +442,7 @@ export function addChapters(list: { title: string; body: string }[]): Chapter[] 
     });
   const added = library.chapters.slice(index);
   if (added.length) {
-    undoEntry = { kind: "import", chapters: added, index };
+    undoEntry = { kind: "import", chapters: added, at: [] };
     ui.flashId = added[0]!.id;
     ui.currentId ??= added[0]!.id;
   }
