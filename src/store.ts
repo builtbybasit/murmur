@@ -48,6 +48,8 @@ export interface Settings {
     tintDialogue: boolean;
   };
   sidebarOpen: boolean;
+  /** book names folded in the sidebar */
+  collapsed: string[];
   lastChapterId: string | null;
 }
 export interface Chapter {
@@ -61,6 +63,8 @@ export interface Chapter {
   pos: number;
   /** all audio was generated for these voice settings (engine's audioSig) */
   ready?: string;
+  /** book it belongs to (EPUB title, or a group you dragged it into); none = a loose chapter */
+  book?: string;
 }
 export interface ToastAction {
   label: string;
@@ -137,6 +141,7 @@ const DEFAULTS: Settings = {
     tintDialogue: true,
   },
   sidebarOpen: true,
+  collapsed: [],
   lastChapterId: null,
 };
 
@@ -374,6 +379,23 @@ export function setChapterBody(id: string, text: string): boolean {
   return true;
 }
 
+/** Rename a book: every chapter in it, and its folded state. */
+export function renameBook(from: string, to: string) {
+  to = to.trim();
+  if (!to || to === from) return;
+  for (const c of library.chapters) if (c.book === from) c.book = to;
+  settings.collapsed = settings.collapsed.map((b) => (b === from ? to : b));
+}
+/** Put chapters in a book (or none). */
+export function setBook(ids: string[], book: string | undefined) {
+  const set = new Set(ids);
+  for (const c of library.chapters)
+    if (set.has(c.id)) {
+      if (book) c.book = book;
+      else delete c.book;
+    }
+}
+
 export function renameChapter(id: string, title: string) {
   const c = library.chapters.find((c) => c.id === id);
   if (c && title.trim()) c.title = title.trim();
@@ -431,10 +453,11 @@ export function undo(): UndoKind | null {
 }
 
 /** Add imported chapters (already titled) at the end, as one undo step. Returns them. */
-export function addChapters(list: { title: string; body: string }[]): Chapter[] {
+export function addChapters(list: { title: string; body: string }[], book?: string): Chapter[] {
   const index = library.chapters.length;
   for (const { title, body } of list)
     library.chapters.push({
+      ...(book && { book }),
       id: newId("c"),
       title,
       body,

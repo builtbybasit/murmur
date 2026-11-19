@@ -59,7 +59,7 @@ async function run() {
     error.value = "Import failed: " + ((e as Error)?.message ?? String(e));
     return;
   }
-  const added = addChapters(out);
+  const added = addChapters(out, b.title.trim() || ui.epubFile?.name.replace(/\.epub$/i, ""));
   close();
   toast({
     title: `Imported ${added.length} chapter${added.length === 1 ? "" : "s"}`,
