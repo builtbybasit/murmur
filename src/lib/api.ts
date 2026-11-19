@@ -115,14 +115,19 @@ const toError = (e: unknown): ProviderError =>
     : { code: "network", status: 0, message: String((e as Error)?.message ?? e), retryAfter: null };
 
 // Optional request fields, most wanted first. A server that rejects one with a 4xx gets the next;
-// the first that works is remembered per base URL. (nano-edge: no mp3, but streams on request;
-// OpenAI: mp3, streams anyway, no `stream` field.)
-const EXTRAS = [
-  { response_format: "mp3", stream: true },
-  { response_format: "mp3" },
-  { stream: true },
-  {},
-];
+// the first that works is remembered per base URL and mode. Audio someone is waiting for wants to
+// stream; audio fetched ahead wants to be small. (nano-edge: no mp3, streams only WAV, FLAC is
+// half the size of WAV. OpenAI: mp3, streams anyway, no `stream` field.)
+const EXTRAS = {
+  live: [
+    { response_format: "mp3", stream: true },
+    { response_format: "flac", stream: true },
+    { stream: true },
+    { response_format: "mp3" },
+    {},
+  ],
+  ahead: [{ response_format: "mp3" }, { response_format: "flac" }, {}],
+};
 const accepted = new Map<string, number>();
 
 /** A streamed WAV says "size unknown" (0xFFFFFFFF); fill in the real sizes so decoders and STT accept it. */
@@ -153,21 +158,23 @@ export async function tts(o: {
   streamId?: string;
 }): Promise<Blob> {
   const base = { model: o.model, voice: o.voice, input: o.input };
-  let i = accepted.get(o.provider.baseUrl) ?? 0;
+  const list = o.streamId ? EXTRAS.live : EXTRAS.ahead;
+  const memo = o.provider.baseUrl + (o.streamId ? "|live" : "|ahead");
+  let i = accepted.get(memo) ?? 0;
   let r: Response;
   for (;;)
     try {
       r = await call(o.provider, "/audio/speech", {
-        json: { ...base, ...EXTRAS[i] },
+        json: { ...base, ...list[i] },
         signal: o.signal,
         accept: "audio/*",
         streamId: o.streamId,
       });
-      accepted.set(o.provider.baseUrl, i);
+      accepted.set(memo, i);
       break;
     } catch (e) {
       const bad = e instanceof ApiError && e.code === "http" && e.status >= 400 && e.status < 500;
-      if (!bad || ++i >= EXTRAS.length) throw e;
+      if (!bad || ++i >= list.length) throw e;
     }
   const blob = await fixWav(await r.blob());
   if (!blob.size)
