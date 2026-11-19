@@ -12,21 +12,20 @@ import {
   TriangleAlert,
   X,
 } from "@lucide/vue";
+import { settings, device } from "../settings";
 import {
-  settings,
-  ui,
   library,
   docOf,
+  isShort,
   CHARS_PER_SEC,
   renameChapter,
-  moveChapter,
   moveChapters,
   deleteChapters,
   renameBook,
   setBook,
-  toast,
   type Chapter,
-} from "../store";
+} from "../library";
+import { ui, toast } from "../ui";
 import { pasteFromClipboard, undoWithToast } from "../paste";
 import { player, open, edit, generating, genState, toggleGenerate } from "../engine";
 
@@ -46,7 +45,7 @@ const mins = (c: Chapter) =>
   Math.max(1, Math.round(docOf(c).chars / CHARS_PER_SEC / settings.speed / 60));
 const pct = (c: Chapter) => {
   const n = docOf(c).segs.length;
-  return n ? Math.min(100, Math.round((100 * c.pos) / n)) : 0;
+  return n ? Math.min(100, Math.round((100 * (library.positions[c.id] ?? 0)) / n)) : 0;
 };
 const RING = 2 * Math.PI * 6; // progress ring circumference (r = 6)
 function genTitle(c: Chapter) {
@@ -227,7 +226,7 @@ watch(
   () => ui.renamingId,
   async (id) => {
     if (!id) return;
-    settings.sidebarOpen = true;
+    device.sidebarOpen = true;
     if (narrow.value) ui.sidebarDrawer = true;
     await nextTick();
     const inp = list.value?.querySelector("input");
@@ -334,7 +333,9 @@ function onRowKey(e: KeyboardEvent, c: Chapter, i: number) {
   const k = e.key,
     row = e.currentTarget as HTMLElement;
   if (e.altKey && (k === "ArrowUp" || k === "ArrowDown")) {
-    moveChapter(c.id, i + (k === "ArrowUp" ? -1 : 1));
+    const up = k === "ArrowUp";
+    const n = library.chapters[i + (up ? -1 : 1)];
+    if (n) moveChapters([c.id], n.id, !up);
     focusRow(c.id);
   } else if (k === "ArrowUp" || k === "ArrowDown") {
     (
@@ -361,7 +362,7 @@ function pickEpub(e: Event) {
   <aside
     ref="side"
     class="side"
-    :class="{ closed: !settings.sidebarOpen, open: ui.sidebarDrawer }"
+    :class="{ closed: !device.sidebarOpen, open: ui.sidebarDrawer }"
     :inert="narrow && !ui.sidebarDrawer"
     aria-label="Chapters"
   >
@@ -469,7 +470,7 @@ function pickEpub(e: Event) {
             @dblclick.stop="ui.renamingId = it.c.id"
             >{{ it.c.title }}</span
           >
-          <span v-if="it.c.short" class="short">short</span>
+          <span v-if="isShort(it.c)" class="short">short</span>
           <button
             v-if="genState(it.c)"
             class="gen"

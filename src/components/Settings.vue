@@ -3,17 +3,16 @@ import { computed, onUnmounted, reactive, ref, watch } from "vue";
 import { ArrowLeft, Play } from "@lucide/vue";
 import {
   settings,
-  ui,
-  library,
   addProvider,
   removeProvider,
   rolesOf,
   providerById,
-  toast,
   type Provider,
   type PresetKey,
   type Role,
-} from "../store";
+} from "../settings";
+import { library } from "../library";
+import { ui, toast } from "../ui";
 import {
   player,
   preview,
@@ -24,8 +23,9 @@ import {
   dropAudio,
   type BookStorage,
 } from "../engine";
-import { unusedImages } from "../lib/images";
-import { sync } from "../sync";
+import { unusedImages, removeUnusedImages } from "../lib/images";
+import { sync } from "../lib/server";
+import { saveSettings } from "../sync";
 import { testConnection, fetchVoices } from "../lib/api";
 import { segmentPara } from "../lib/segment";
 import VoicePicker from "./VoicePicker.vue";
@@ -99,6 +99,7 @@ function setVoices(p: Provider, e: Event) {
 async function test(p: Provider) {
   busy.value = p.id;
   msg[p.id] = { cls: "", text: "Testing…" };
+  await saveSettings(); // the relay uses the server's copy of the provider for its key
   const r = await testConnection(p);
   busy.value = null;
   if (!r.ok) {
@@ -123,6 +124,7 @@ async function test(p: Provider) {
 async function getVoices(p: Provider) {
   busy.value = p.id;
   msg[p.id] = { cls: "", text: "Fetching /audio/voices…" };
+  await saveSettings();
   const r = await fetchVoices(p);
   busy.value = null;
   if (r.ok) {
@@ -184,7 +186,7 @@ const imgs = ref<Awaited<ReturnType<typeof unusedImages>> | null>(null);
 const loadStats = async () => {
   stats.value = await cacheStats();
   perBook.value = await storageByBook();
-  imgs.value = await unusedImages(library.chapters.map((c) => c.body));
+  imgs.value = await unusedImages();
 };
 async function clearBook(b: BookStorage) {
   await dropAudio(b.keys, b.book);
@@ -199,7 +201,7 @@ async function clearOther() {
 }
 async function clearImages() {
   const n = imgs.value!.count;
-  await imgs.value!.remove();
+  await removeUnusedImages();
   await loadStats();
   toast({ title: `Removed ${n} unused image${n === 1 ? "" : "s"}` }, 3000);
 }
@@ -247,7 +249,8 @@ async function clear() {
         <h2>Providers</h2>
         <p class="hint">
           OpenAI-compatible endpoints. Requests are forwarded by the local relay, so CORS does not
-          apply. Keys are stored in this browser only.
+          apply. Keys are kept by the relay on this Mac (<code>~/.lectern</code>); browsers never
+          get them.
         </p>
         <div
           v-for="p in settings.providers"
@@ -280,7 +283,9 @@ async function clear() {
                   type="password"
                   class="monoi"
                   :class="{ bad: fixing(p) }"
-                  placeholder="Optional for local servers"
+                  :placeholder="
+                    p.hasKey ? 'Saved on the server; type to replace' : 'Optional for local servers'
+                  "
                   autocomplete="off"
                 />
                 <small v-if="fixing(p)" class="err"
@@ -541,19 +546,14 @@ async function clear() {
       <!-- storage -->
       <template v-else-if="ui.settingsTab === 'storage'">
         <h2>Storage</h2>
-        <p v-if="sync.online" class="hint">
-          Chapters, reading positions and settings are shared through the lectern server on your Mac
-          (<code>~/.lectern</code>), so your phone sees the same library. Audio is cached in each
-          browser. To listen on your phone, run <code>bun run phone</code> and open the link it
-          prints.
+        <p class="hint">
+          Chapters, reading positions, images and settings are shared through the lectern server on
+          your Mac (<code>~/.lectern</code>), so your phone sees the same library. Audio is cached
+          in each browser. To listen on your phone, use the phone button in the top bar.
           <span v-if="sync.error" class="bad-t"
             ><br />Last save to the server failed ({{ sync.error }}); it is retried with your next
             change.</span
           >
-        </p>
-        <p v-else class="hint">
-          Everything lives in this browser. Nothing is uploaded except the text sent to your
-          providers.
         </p>
         <div class="box">
           <div class="kv">
@@ -591,10 +591,10 @@ async function clear() {
             >
             <button v-if="imgs?.count" class="btn" @click="clearImages">Remove unused</button>
             <span v-else />
-            <span>Settings and keys</span>
+            <span>API keys</span>
             <span
-              >Stored unencrypted in this browser<br /><small class="h"
-                >Fine on your own machine. Do not use a shared browser profile.</small
+              >Stored unencrypted in <code>~/.lectern</code> on your Mac<br /><small class="h"
+                >Only the Mac's relay uses them; no browser, phone included, ever gets them.</small
               ></span
             >
             <span />

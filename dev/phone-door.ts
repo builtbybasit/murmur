@@ -6,16 +6,15 @@ import { getCertificate } from "@vitejs/plugin-basic-ssl";
 import { request, type IncomingHttpHeaders } from "node:http";
 import { createServer } from "node:https";
 import { connect } from "node:net";
-import { join } from "node:path";
-import { dataDir } from "./library-api";
 
-/** Marks a request that came through the door; the key check applies to it (see `allowed`). */
+/** Marks a request that came through the door; the key check applies to it (see `guard`). */
 export const VIA = "x-lectern-remote";
 
 export async function openPhoneDoor(
   target: number,
+  certDir: string,
 ): Promise<{ port: number; close: () => void } | null> {
-  const pem = await getCertificate(join(dataDir(), "cert"), "lectern"); // key and cert in one PEM
+  const pem = await getCertificate(certDir, "lectern"); // key and cert in one PEM
   const port = target + 1000;
   const headersFor = (h: IncomingHttpHeaders, remote = "") => ({ ...h, [VIA]: remote || "1" });
 

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { reactive, ref } from "vue";
 import { Check } from "@lucide/vue";
-import { PRESETS, addProvider, hasTts, settings, toast, ui, type PresetKey } from "../store";
+import { PRESETS, addProvider, hasTts, settings, type PresetKey } from "../settings";
+import { toast, ui } from "../ui";
 import { testConnection } from "../lib/api";
 import { pasteFromClipboard } from "../paste";
 
@@ -88,8 +89,8 @@ function openSettings() {
           </template>
           <form v-else @submit.prevent="save">
             <p>
-              Any OpenAI-compatible endpoint. Requests go through the local relay, and the key stays
-              in this browser.
+              Any OpenAI-compatible endpoint. Requests go through the local relay, which keeps the
+              key on this Mac.
             </p>
             <div class="segc">
               <button

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // EPUB import: pick chapters (front/back matter unticked), convert, add as one undo step.
 import { computed, onMounted, ref, shallowRef } from "vue";
-import { addChapters, toast, ui } from "../store";
+import { addChapters } from "../library";
+import { toast, ui } from "../ui";
 import { undoWithToast } from "../paste";
 import { openEpub, type Epub } from "../lib/epub";
 

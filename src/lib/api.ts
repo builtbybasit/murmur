@@ -1,7 +1,7 @@
-// OpenAI-compatible provider calls, all through the /relay dev-server middleware (see vite.config.ts).
-import type { Provider } from "../store";
+// OpenAI-compatible provider calls, all through the /relay dev-server middleware (dev/server.ts),
+// which adds the provider's saved API key: keys never reach the browser.
+import type { Provider } from "../settings";
 import type { SttWord } from "./align";
-import { keyHeaders } from "./server";
 
 export type ErrorCode = "auth" | "rate" | "network" | "http";
 export interface ProviderError {
@@ -10,10 +10,8 @@ export interface ProviderError {
   message: string;
   retryAfter: number | null; // seconds, from Retry-After on 429
 }
-export type TestResult =
-  | { ok: true; ms: number; models: string[] }
-  | { ok: false; error: ProviderError };
-export type VoicesResult =
+type TestResult = { ok: true; ms: number; models: string[] } | { ok: false; error: ProviderError };
+type VoicesResult =
   | { ok: true; voices: string[] }
   | { ok: false; notFound?: boolean; error: ProviderError };
 
@@ -77,9 +75,10 @@ async function call(
   } = {},
 ): Promise<Response> {
   const headers: Record<string, string> = {
-    ...keyHeaders(),
     "x-target": p.baseUrl.trim().replace(/\/+$/, "") + path,
+    "x-provider": p.id,
   };
+  // a key typed here and not saved yet goes along; otherwise the relay adds the saved one
   if (p.apiKey) headers.authorization = "Bearer " + p.apiKey.trim();
   if (init.accept) headers.accept = init.accept;
   if (init.streamId) headers["x-stream-id"] = init.streamId;

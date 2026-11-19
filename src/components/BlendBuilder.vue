@@ -4,7 +4,7 @@ import { computed, reactive } from "vue";
 import { Play, Plus, X } from "@lucide/vue";
 import { player, preview, stopPreview } from "../engine";
 import { formatBlend, parseBlend, isBlend, type BlendPart } from "../lib/voice";
-import type { Role } from "../store";
+import { type Role } from "../settings";
 
 const props = defineProps<{ role: Role; voices: string[]; start: string }>();
 const emit = defineEmits<{ use: [voice: string]; error: [message: string] }>();

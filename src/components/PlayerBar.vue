@@ -1,17 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch, onBeforeUnmount } from "vue";
 import { Moon, Play, Pause, SkipBack, SkipForward, TriangleAlert } from "@lucide/vue";
-import {
-  ui,
-  settings,
-  current,
-  currentDoc,
-  library,
-  voiceFor,
-  providerById,
-  hasTts,
-  CHARS_PER_SEC,
-} from "../store";
+import { settings, voiceFor, providerById, hasTts } from "../settings";
+import { current, currentDoc, library, CHARS_PER_SEC } from "../library";
+import { ui } from "../ui";
 import {
   player,
   toggle,
@@ -253,8 +245,10 @@ const sleepLabel = computed(() =>
       ? Math.ceil(sleepTimer.left / 60_000) + "m"
       : "",
 );
+const sleepMins = ref(0); // the duration picked, to mark it in the menu
 function pickSleep(v: null | "chapter" | number) {
   setSleep(v);
+  if (typeof v === "number") sleepMins.value = v;
   sleepPop.value?.hidePopover();
 }
 
@@ -399,7 +393,9 @@ const step = (d: number) => setSpeed(Math.round((settings.speed + d) * 10) / 10)
         :key="label"
         :class="{
           on:
-            (v === null && !sleepTimer.mode) || (v === 'chapter' && sleepTimer.mode === 'chapter'),
+            (v === null && !sleepTimer.mode) ||
+            (v === 'chapter' && sleepTimer.mode === 'chapter') ||
+            (v === sleepMins && sleepTimer.mode === 'time'),
         }"
         @click="pickSleep(v)"
       >

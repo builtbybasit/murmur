@@ -1,22 +1,18 @@
 // Playback engine: TTS per segment with prefetch, audio cache, STT alignment, retries.
 // CONTRACT: UI components only read `player` and call the exported functions below.
 import { computed, reactive, watch } from "vue";
+import { settings, voiceFor, providerById, type Provider, type Role } from "./settings";
 import {
-  settings,
-  ui,
   library,
   current,
   currentDoc,
   docOf,
-  voiceFor,
-  providerById,
   CHARS_PER_SEC,
-  toast,
   readyMarks,
+  setPosition,
   type Chapter,
-  type Provider,
-  type Role,
-} from "./store";
+} from "./library";
+import { ui, toast } from "./ui";
 import type { Doc, Seg } from "./lib/segment";
 import { tts, stt as transcribe, ApiError, type ErrorCode, type ProviderError } from "./lib/api";
 import { alignWords, estimateTimes, type Span, type SttWord } from "./lib/align";
@@ -237,8 +233,7 @@ function stopAudio() {
 }
 
 function savePos() {
-  const c = chapter();
-  if (c && doc && c.pos !== player.seg) c.pos = player.seg;
+  if (chId && doc) setPosition(chId, player.seg);
 }
 
 function updateTotals() {
@@ -343,7 +338,7 @@ function load(
   const n = segs().length;
   Object.assign(player, {
     started: !!o.keepStarted && player.started,
-    seg: clamp(o.seg ?? c?.pos ?? 0, 0, Math.max(0, n - 1)),
+    seg: clamp(o.seg ?? library.positions[id ?? ""] ?? 0, 0, Math.max(0, n - 1)),
     word: -1,
     timing: "estimated",
     elapsed: 0,
@@ -354,6 +349,7 @@ function load(
   player.elapsed = doc ? before(player.seg) : 0;
   refreshStatus();
   if (!doc) return;
+  savePos(); // other devices open this chapter too
   void scan();
   if (o.autoplay) play();
 }
@@ -727,6 +723,15 @@ watch(
     else load(id);
   },
   { immediate: true },
+);
+// Another device moved on (seen when you come back to this one): follow it unless playing here.
+watch(
+  () => [library.currentId, library.positions[library.currentId ?? ""]] as const,
+  ([id, seg]) => {
+    if (!id || wantPlay || !library.chapters.some((c) => c.id === id)) return;
+    if (id !== chId) open(id);
+    else if (seg != null && seg !== player.seg) seek(seg, 0, { play: false });
+  },
 );
 // Voice changed: cache keys changed. The segment already playing finishes in the old voice.
 watch(

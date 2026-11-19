@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
-import { ui } from "../store";
+import { ui } from "../ui";
 
 const MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 const M = MAC ? "⌘" : "Ctrl+";

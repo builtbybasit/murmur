@@ -2,8 +2,8 @@
 import { PanelLeft, Keyboard, Settings, Smartphone } from "@lucide/vue";
 import ReadingPopover from "./ReadingPopover.vue";
 import PhonePopover from "./PhonePopover.vue";
-import { ui, current } from "../store";
-import { sync } from "../sync";
+import { current } from "../library";
+import { ui } from "../ui";
 
 // the phone button belongs on the Mac, not on the phone itself
 const onMac = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
@@ -32,7 +32,7 @@ defineEmits<{ side: [] }>();
     </div>
     <div class="sp"></div>
     <button
-      v-if="onMac && sync.online"
+      v-if="onMac"
       class="ib"
       popovertarget="phone"
       title="Listen on your phone"

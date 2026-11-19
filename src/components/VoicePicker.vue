@@ -4,7 +4,7 @@ import { computed, ref } from "vue";
 import { AudioLines, Blend, Search } from "@lucide/vue";
 import { player, preview, stopPreview } from "../engine";
 import { groupVoices } from "../lib/voice";
-import type { Provider, Role } from "../store";
+import { type Provider, type Role } from "../settings";
 import BlendBuilder from "./BlendBuilder.vue";
 
 const props = defineProps<{ role: Role; provider: Provider | null }>();

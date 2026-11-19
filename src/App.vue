@@ -11,7 +11,9 @@ import Settings from "./components/Settings.vue";
 import Onboarding from "./components/Onboarding.vue";
 // loaded on first use: epub-ts and jszip stay out of the main bundle
 const EpubImport = defineAsyncComponent(() => import("./components/EpubImport.vue"));
-import { settings, ui, library, FONTS } from "./store";
+import { settings, device, FONTS } from "./settings";
+import { library } from "./library";
+import { ui } from "./ui";
 import { addFromText, undoWithToast } from "./paste";
 import * as engine from "./engine";
 
@@ -20,7 +22,7 @@ const dark = usePreferredDark();
 const narrow = useMediaQuery("(max-width: 820px)");
 
 watchEffect(() => {
-  const r = settings.reading;
+  const r = device.reading;
   const root = document.documentElement;
   root.dataset.theme = r.theme === "system" ? (dark.value ? "dark" : "light") : r.theme;
   root.style.setProperty("--read", (FONTS[r.font] ?? FONTS.serif).css);
@@ -31,7 +33,7 @@ watchEffect(() => {
 
 function toggleSide() {
   if (narrow.value) ui.sidebarDrawer = !ui.sidebarDrawer;
-  else settings.sidebarOpen = !settings.sidebarOpen;
+  else device.sidebarOpen = !device.sidebarOpen;
 }
 
 const inField = (t: EventTarget | null) =>
@@ -124,14 +126,12 @@ useEventListener(document, "keydown", (e: KeyboardEvent) => {
 <template>
   <div class="app">
     <TopBar @side="toggleSide" />
-    <div class="mid" :class="{ noside: !settings.sidebarOpen }">
+    <div class="mid" :class="{ noside: !device.sidebarOpen }">
       <Sidebar />
       <main>
-        <template v-if="library.loaded">
-          <Settings v-if="ui.view === 'settings'" />
-          <Onboarding v-else-if="!library.chapters.length" />
-          <Reader v-else />
-        </template>
+        <Settings v-if="ui.view === 'settings'" />
+        <Onboarding v-else-if="!library.chapters.length" />
+        <Reader v-else />
       </main>
     </div>
     <div class="bottom"><PlayerBar /></div>

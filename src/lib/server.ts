@@ -1,34 +1,20 @@
-// Talking to the lectern dev server: the access key (from the phone link) and /api calls.
+// /api calls to the lectern dev server (dev/server.ts). Other devices get in with a cookie the
+// phone link sets; this Mac needs none.
+import { reactive } from "vue";
 
-/** The key arrives once as ?key=… in the phone link; it is remembered and removed from the URL. */
-const key = (() => {
-  try {
-    const u = new URL(location.href);
-    const k = u.searchParams.get("key");
-    if (k) {
-      localStorage.setItem("lectern.key", k);
-      u.searchParams.delete("key");
-      history.replaceState(null, "", u);
-    }
-    return localStorage.getItem("lectern.key") ?? "";
-  } catch {
-    return "";
-  }
-})();
-export const keyHeaders = (): Record<string, string> => (key ? { "x-lectern-key": key } : {});
+/** error: the last save failed (shown in Settings › Storage); cleared by the next one that works */
+export const sync = reactive({ error: "" });
 
-/** fetch /api/<path> with the key; throws on a non-2xx answer. */
+/** fetch /api/<path>; throws on a non-2xx answer. */
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  const r = await fetch("/api/" + path, {
-    ...init,
-    headers: { ...keyHeaders(), ...(init.headers as Record<string, string>) },
-  });
+  const r = await fetch("/api/" + path, init);
   if (!r.ok) throw new Error(`${r.status} ${(await r.text()).slice(0, 200)}`);
   return r;
 }
-export const putJson = (path: string, body: unknown) =>
+export const getJson = async <T>(path: string): Promise<T> => (await apiFetch(path)).json();
+export const sendJson = (path: string, body: unknown, method = "PUT") =>
   apiFetch(path, {
-    method: "PUT",
+    method,
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });

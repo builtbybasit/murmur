@@ -2,18 +2,10 @@
 // Reading view. The chapter text is rendered once per doc as an HTML string (30k word spans
 // would be too heavy as reactive vnodes); highlight classes are moved imperatively in paint().
 import { computed, ref, watch, nextTick, onMounted, onBeforeUnmount } from "vue";
-import {
-  ui,
-  settings,
-  current,
-  currentDoc,
-  library,
-  setChapterBody,
-  toast,
-  CHARS_PER_SEC,
-} from "../store";
+import { settings, device } from "../settings";
+import { current, currentDoc, library, setChapterBody, CHARS_PER_SEC } from "../library";
+import { ui, toast } from "../ui";
 import type { Seg, Word } from "../lib/segment";
-import { imageUrl } from "../lib/images";
 import { player, seek, nextChapter, genState, toggleGenerate } from "../engine";
 
 const scroller = ref<HTMLElement | null>(null);
@@ -59,11 +51,10 @@ const html = computed(() => {
     }
     if (b.rule) out += "<hr>";
     if (b.tag === "img") {
-      // book images load from IndexedDB after render (fillImages); web images load directly
+      // book images come from the lectern server; web images load directly
       const s = d.segs[idx[0]!]!;
-      const src = s.img!.src;
-      const at = src.startsWith("img:") ? `data-img="${attr(src.slice(4))}"` : `src="${attr(src)}"`;
-      out += `<p class="fig"><span class="seg narr" data-s="${s.i}"><img ${at} alt="${attr(s.img!.alt)}" loading="lazy"></span></p>`;
+      const src = s.img!.src.replace(/^img:/, "/api/images/");
+      out += `<p class="fig"><span class="seg narr" data-s="${s.i}"><img src="${attr(src)}" alt="${attr(s.img!.alt)}" loading="lazy"></span></p>`;
       return;
     }
     if (b.tag === "tr") {
@@ -185,7 +176,10 @@ function paint() {
   const d = doc.value;
   if (!d || !list.length) return;
   const on = player.started;
-  const si = Math.min(list.length - 1, Math.max(0, on ? player.seg : (current.value?.pos ?? 0)));
+  const si = Math.min(
+    list.length - 1,
+    Math.max(0, on ? player.seg : (library.positions[ui.currentId ?? ""] ?? 0)),
+  );
   const parts = list[si] ?? [];
   const se = parts[0];
   if (!se) return;
@@ -225,7 +219,7 @@ watch(
     player.timing,
     player.status,
     player.segState[player.seg],
-    current.value?.pos,
+    library.positions[ui.currentId ?? ""],
   ],
   paint,
   { flush: "post" },
@@ -250,20 +244,11 @@ function reveal(instant = false) {
 }
 
 // new chapter: start at the top, or jump straight to the resume position
-function fillImages() {
-  for (const im of textEl.value?.querySelectorAll<HTMLImageElement>("img[data-img]") ?? [])
-    void imageUrl(im.dataset.img!).then((u) => {
-      if (u) im.src = u;
-      else im.alt ||= "Image missing";
-    });
-}
-
 function onDoc() {
-  fillImages();
   if (scroller.value) scroller.value.scrollTop = 0;
   paint();
   paintBad();
-  if (player.started ? ui.follow : (current.value?.pos ?? 0) > 0) reveal(true);
+  if (player.started ? ui.follow : (library.positions[ui.currentId ?? ""] ?? 0) > 0) reveal(true);
 }
 watch(html, onDoc, { flush: "post" });
 
@@ -312,7 +297,7 @@ function onClick(e: MouseEvent) {
     <section
       ref="scroller"
       class="reader"
-      :class="{ tint: settings.reading.tintDialogue }"
+      :class="{ tint: device.reading.tintDialogue }"
       @wheel.passive="unfollow"
       @touchmove.passive="unfollow"
       @mousedown="onMouseDown"

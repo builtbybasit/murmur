@@ -1,5 +1,6 @@
-// Adding chapters from the clipboard, with the toasts from DESIGN.md section 2.
-import { addChapter, docOf, toast, ui, undo } from "./store";
+// Adding chapters from the clipboard, with their toasts.
+import { addChapter, docOf, isShort, undo } from "./library";
+import { toast, ui } from "./ui";
 import { htmlToMarkdown } from "./lib/markdown";
 
 /** Web pages put HTML on the clipboard too: keep its bold, italics, tables and scene breaks. */
@@ -10,12 +11,13 @@ export function addFromText(text: string | null | undefined, html?: string | nul
   if (r.status === "dup") return toast({ title: "Already in the list", sub: r.chapter!.title });
   const ch = r.chapter!;
   const d = docOf(ch);
+  const short = isShort(ch);
   toast({
     title: `Added "${ch.title}"`,
-    sub: ch.short
+    sub: short
       ? `${d.words} words · short paste, is this the right text?`
       : `${d.words} words · ${d.segs.length} segments · ready for the next paste`,
-    warn: ch.short,
+    warn: short,
     actions: [
       { label: "Rename", run: () => (ui.renamingId = ch.id) },
       { label: "Undo", run: undoWithToast },

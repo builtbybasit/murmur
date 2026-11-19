@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
-import { settings, ui, FONTS } from "../store";
+import { device, FONTS } from "../settings";
+import { ui } from "../ui";
 
 const el = ref<HTMLElement>();
-const r = settings.reading;
+const r = device.reading;
 const themes = ["light", "dark", "system"] as const;
 
 watch(

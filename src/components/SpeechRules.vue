@@ -2,7 +2,8 @@
 // Settings › Spoken text: what the TTS is sent. The reader always shows the original.
 import { computed, ref } from "vue";
 import { Plus, RotateCcw, Search, X } from "@lucide/vue";
-import { settings, toast, upgradeSpeech } from "../store";
+import { settings, restoreSpeechDefaults } from "../settings";
+import { toast } from "../ui";
 import { makeSpeaker } from "../lib/speech";
 
 const rules = settings.speech.rules;
@@ -26,7 +27,7 @@ function add() {
   rules.unshift({ find: "", replace: "" });
 }
 function restore() {
-  const { filled, added } = upgradeSpeech();
+  const { filled, added } = restoreSpeechDefaults();
   const parts = [added && `added ${added}`, filled && `filled ${filled}`].filter(Boolean);
   toast(
     { title: parts.length ? `Defaults restored: ${parts.join(", ")}` : "Nothing to restore" },

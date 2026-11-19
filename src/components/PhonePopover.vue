@@ -2,8 +2,8 @@
 // "Listen on your phone": a QR code of the phone link (with the access key). Shown on this Mac only.
 import { computed, ref } from "vue";
 import { renderSVG } from "uqr";
-import { apiFetch } from "../lib/server";
-import { toast } from "../store";
+import { getJson } from "../lib/server";
+import { toast } from "../ui";
 
 const el = ref<HTMLElement>();
 const links = ref<string[]>([]);
@@ -18,10 +18,10 @@ async function onToggle(e: Event) {
     el.value.style.right = Math.max(8, innerWidth - b.right) + "px";
     el.value.style.top = b.bottom + 6 + "px";
   }
-  links.value = await apiFetch("phone")
-    .then((r) => r.json())
-    .then((j: { links: string[] }) => j.links)
-    .catch(() => []);
+  links.value = await getJson<{ links: string[] }>("phone").then(
+    (j) => j.links,
+    () => [],
+  );
 }
 async function copy() {
   await navigator.clipboard.writeText(link.value);
@@ -33,7 +33,6 @@ async function copy() {
   <div id="phone" ref="el" popover class="pop" @beforetoggle="onToggle">
     <h4>Listen on your phone</h4>
     <template v-if="link">
-      <!-- eslint-disable-next-line vue/no-v-html -- SVG we generate from our own link -->
       <div class="qr" v-html="svg" />
       <ol>
         <li>Phone on the same Wi-Fi as this Mac.</li>
