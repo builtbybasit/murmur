@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vp dev",
+    "phone": "LECTERN_PHONE=1 vp dev",
     "build": "vp build",
     "preview": "vp preview",
     "test": "bun src/lib/segment.test.ts && bun src/lib/markdown.test.ts && bun src/lib/align.test.ts && bun src/lib/voice.test.ts && bun src/lib/speech.test.ts",
@@ -22,6 +23,7 @@
   "devDependencies": {
     "@types/node": "^26.6.6",
     "@types/turndown": "^5.0.6",
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
     "@vitejs/plugin-vue": "^6.0.10",
     "@vue/tsconfig": "^0.9.1",
     "typescript": "6.0.3",

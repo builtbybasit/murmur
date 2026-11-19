@@ -61,8 +61,6 @@ export interface Chapter {
   short: boolean;
   /** saved segment index */
   pos: number;
-  /** all audio was generated for these voice settings (engine's audioSig) */
-  ready?: string;
   /** book it belongs to (EPUB title, or a group you dragged it into); none = a loose chapter */
   book?: string;
 }
@@ -205,6 +203,9 @@ export const ui = reactive({
   editingId: null as string | null, // chapter whose text is open in the editor (Reader)
   epubFile: null as File | null, // EPUB being imported (EpubImport dialog)
 });
+
+/** Chapters whose audio is all generated, per device (its own cache): id -> engine's audioSig. */
+export const readyMarks = useLocalStorage<Record<string, string>>("lectern.ready", {});
 
 /** Chapters, in list order. chapter = { id, title, body, raw, addedAt, short, pos } (pos = segment index). */
 export const library = reactive({ chapters: [] as Chapter[], loaded: false });
@@ -375,7 +376,7 @@ export function setChapterBody(id: string, text: string): boolean {
   if (!c || !body) return false;
   c.body = body;
   c.short = body.split(/\s+/).length < 40;
-  delete c.ready; // changed text: some segments need audio again
+  delete readyMarks.value[id]; // changed text: some segments need audio again
   return true;
 }
 

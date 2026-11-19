@@ -1,6 +1,7 @@
 // OpenAI-compatible provider calls, all through the /relay dev-server middleware (see vite.config.ts).
 import type { Provider } from "../store";
 import type { SttWord } from "./align";
+import { keyHeaders } from "./server";
 
 export type ErrorCode = "auth" | "rate" | "network" | "http";
 export interface ProviderError {
@@ -76,6 +77,7 @@ async function call(
   } = {},
 ): Promise<Response> {
   const headers: Record<string, string> = {
+    ...keyHeaders(),
     "x-target": p.baseUrl.trim().replace(/\/+$/, "") + path,
   };
   if (p.apiKey) headers.authorization = "Bearer " + p.apiKey.trim();

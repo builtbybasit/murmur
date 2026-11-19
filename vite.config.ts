@@ -1,14 +1,11 @@
 import vue from "@vitejs/plugin-vue";
+import basicSsl from "@vitejs/plugin-basic-ssl";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { AddressInfo } from "node:net";
+import { allowed, api, phoneLinks, readBody } from "./dev/library-api";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { defineConfig, lazyPlugins, type Plugin } from "vite-plus";
-
-async function readBody(req: IncomingMessage) {
-  const chunks: Buffer[] = [];
-  for await (const c of req) chunks.push(c as Buffer);
-  return Buffer.concat(chunks);
-}
 
 // Streaming: a request with x-stream-id also copies the provider's audio, as it arrives, to
 // GET /relay/stream/<id>, which an <audio> element plays before generation has finished.
@@ -55,10 +52,14 @@ function listen(id: string, res: ServerResponse) {
 }
 
 // Browser -> /relay (x-target: full provider URL) -> provider. Avoids CORS on every provider.
-// ponytail: open relay on the dev/preview server, fine while Vite binds localhost only.
+// Other devices need the access key (see dev/library-api.ts); this machine needs none.
 async function relay(req: IncomingMessage, res: ServerResponse) {
   const sm = /^\/stream\/([\w-]+)/.exec(req.url ?? "");
-  if (sm) return listen(sm[1]!, res);
+  if (sm) return listen(sm[1]!, res); // unguessable id, and <audio> cannot send the key header
+  if (!allowed(req)) {
+    res.statusCode = 401;
+    return res.end("Open the phone link printed by the dev server");
+  }
   const target = req.headers["x-target"];
   if (typeof target !== "string" || !/^https?:\/\//.test(target)) {
     res.statusCode = 400;
@@ -115,10 +116,27 @@ async function relay(req: IncomingMessage, res: ServerResponse) {
     res.end(String(e.cause?.message ?? e.message));
   }
 }
+const PHONE = !!process.env.LECTERN_PHONE; // `bun run phone`: on the network, over HTTPS
+
 const relayPlugin: Plugin = {
   name: "lectern-relay",
-  configureServer: (s) => void s.middlewares.use("/relay", relay),
-  configurePreviewServer: (s) => void s.middlewares.use("/relay", relay),
+  configureServer(s) {
+    s.middlewares.use("/relay", relay);
+    s.middlewares.use("/api", api);
+    if (PHONE)
+      s.httpServer?.once("listening", () =>
+        setTimeout(() => {
+          const port = (s.httpServer!.address() as AddressInfo).port;
+          console.log("\n  Phone (same Wi-Fi; accept the certificate warning once):");
+          for (const l of phoneLinks(true, port)) console.log("  ➜  " + l);
+          console.log();
+        }, 50),
+      );
+  },
+  configurePreviewServer(s) {
+    s.middlewares.use("/relay", relay);
+    s.middlewares.use("/api", api);
+  },
 };
 
 // https://vite.dev/config/
@@ -129,5 +147,6 @@ export default defineConfig({
     rules: { "vite-plus/prefer-vite-plus-imports": "error" },
     options: { typeAware: true, typeCheck: true },
   },
-  plugins: lazyPlugins(() => [vue(), relayPlugin]),
+  server: PHONE ? { host: true } : {},
+  plugins: lazyPlugins(() => [vue(), relayPlugin, ...(PHONE ? [basicSsl()] : [])]),
 });

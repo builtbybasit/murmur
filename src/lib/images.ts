@@ -1,6 +1,7 @@
 // Book images (from EPUB imports) in IndexedDB, keyed by content hash. Chapters reference them
 // as ![alt](img:<id>) in their Markdown.
 import { createStore, delMany, entries, get, set } from "idb-keyval";
+import { apiFetch } from "./server";
 
 const store = createStore("lectern-images", "images");
 
@@ -11,6 +12,12 @@ export async function putImage(blob: Blob): Promise<string> {
     b.toString(16).padStart(2, "0"),
   ).join("");
   if (!(await get(id, store))) await set(id, blob, store);
+  // the shared library (other devices) gets a copy; no server (a static build): local only
+  await apiFetch("images/" + id, {
+    method: "PUT",
+    headers: { "content-type": blob.type || "application/octet-stream" },
+    body: blob,
+  }).catch(() => {});
   return id;
 }
 
@@ -22,10 +29,17 @@ export function imageUrl(id: string): Promise<string | null> {
   if (!u)
     urls.set(
       id,
-      (u = get<Blob>(id, store).then(
-        (b) => (b ? URL.createObjectURL(b) : null),
-        () => null,
-      )),
+      (u = (async () => {
+        let b = await get<Blob>(id, store).catch(() => undefined);
+        if (!b) {
+          // imported on another device: fetch it from the shared library once
+          b = await apiFetch("images/" + id)
+            .then((r) => r.blob())
+            .catch(() => undefined);
+          if (b) await set(id, b, store).catch(() => {});
+        }
+        return b ? URL.createObjectURL(b) : null;
+      })()),
     );
   return u;
 }
@@ -41,10 +55,10 @@ export async function unusedImages(bodies: string[]) {
     total: all.length,
     count: unused.length,
     bytes: unused.reduce((n, [, b]) => n + b.size, 0),
-    remove: () =>
-      delMany(
-        unused.map(([id]) => id),
-        store,
-      ),
+    remove: async () => {
+      const ids = unused.map(([id]) => id);
+      await delMany(ids, store);
+      for (const id of ids) await apiFetch("images/" + id, { method: "DELETE" }).catch(() => {});
+    },
   };
 }

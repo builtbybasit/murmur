@@ -12,6 +12,7 @@ import {
   providerById,
   CHARS_PER_SEC,
   toast,
+  readyMarks,
   type Chapter,
   type Provider,
   type Role,
@@ -786,9 +787,9 @@ export const audioSig = computed(() =>
     ]),
   ),
 );
-/** queued | running | failed | done, or null: "done" survives reloads via chapter.ready. */
+/** queued | running | failed | done, or null: "done" survives reloads via readyMarks. */
 export const genState = (c: Chapter) =>
-  generating[c.id]?.state ?? (c.ready === audioSig.value ? "done" : null);
+  generating[c.id]?.state ?? (readyMarks.value[c.id] === audioSig.value ? "done" : null);
 
 export interface GenJob {
   state: "queued" | "running" | "done" | "failed";
@@ -853,7 +854,7 @@ async function genLoop() {
     try {
       await genChapter(c.id, docOf(c), j, ac.signal);
       j.state = "done";
-      c.ready = audioSig.value;
+      readyMarks.value[c.id] = audioSig.value;
     } catch (e) {
       if (!ac.signal.aborted) {
         Object.assign(j, { state: "failed", error: toPlain(e).message });
@@ -1226,7 +1227,7 @@ export async function storageByBook(): Promise<{
 export async function dropAudio(keys: string[], book?: string) {
   await cache.dropEntries(keys);
   if (book !== undefined)
-    for (const c of library.chapters) if ((c.book ?? "") === book) delete c.ready;
+    for (const c of library.chapters) if ((c.book ?? "") === book) delete readyMarks.value[c.id];
   refresh();
 }
 

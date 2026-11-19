@@ -25,6 +25,7 @@ import {
   type BookStorage,
 } from "../engine";
 import { unusedImages } from "../lib/images";
+import { sync } from "../sync";
 import { testConnection, fetchVoices } from "../lib/api";
 import { segmentPara } from "../lib/segment";
 import VoicePicker from "./VoicePicker.vue";
@@ -540,7 +541,17 @@ async function clear() {
       <!-- storage -->
       <template v-else-if="ui.settingsTab === 'storage'">
         <h2>Storage</h2>
-        <p class="hint">
+        <p v-if="sync.online" class="hint">
+          Chapters, reading positions and settings are shared through the lectern server on your Mac
+          (<code>~/.lectern</code>), so your phone sees the same library. Audio is cached in each
+          browser. To listen on your phone, run <code>bun run phone</code> and open the link it
+          prints.
+          <span v-if="sync.error" class="bad-t"
+            ><br />Last save to the server failed ({{ sync.error }}); it is retried with your next
+            change.</span
+          >
+        </p>
+        <p v-else class="hint">
           Everything lives in this browser. Nothing is uploaded except the text sent to your
           providers.
         </p>
@@ -1017,5 +1028,8 @@ select:disabled,
   .kv > span:nth-child(3n + 2) {
     grid-column: 1;
   }
+}
+.bad-t {
+  color: var(--err);
 }
 </style>
