@@ -31,7 +31,8 @@ export interface Settings {
   stt: { enabled: boolean; providerId: string | null; model: string };
   /** text sent to TTS: replace rules, then automatic emoji/kaomoji removal */
   /** suffix: said after each face/emoji label ("waving emoji") */
-  speech: { auto: boolean; rules: Rule[]; suffix: string; version?: number };
+  /** images: say "Illustration." for each picture (false: pass over it silently) */
+  speech: { auto: boolean; rules: Rule[]; suffix: string; images: boolean; version?: number };
   smartQuotes: boolean;
   prefetch: number;
   /** silence between segments / paragraphs, in ms at 1.0x */
@@ -121,7 +122,7 @@ const DEFAULTS: Settings = {
   stt: { enabled: true, providerId: null, model: "whisper-1" },
   smartQuotes: true,
   prefetch: 3,
-  speech: { auto: true, rules: DEFAULT_RULES, suffix: "emoji" }, // no version: old saves must not inherit it
+  speech: { auto: true, rules: DEFAULT_RULES, suffix: "emoji", images: true }, // no version: old saves must not inherit it
   segmentGap: 0,
   paragraphGap: 300,
   speed: 1,
@@ -195,6 +196,7 @@ export const ui = reactive({
   flashId: null as string | null, // chapter row to flash
   renamingId: null as string | null, // chapter row in rename mode (Sidebar)
   editingId: null as string | null, // chapter whose text is open in the editor (Reader)
+  epubFile: null as File | null, // EPUB being imported (EpubImport dialog)
 });
 
 /** Chapters, in list order. chapter = { id, title, body, raw, addedAt, short, pos } (pos = segment index). */
@@ -319,7 +321,8 @@ export function removeProvider(id: string) {
 
 // ---------- chapters ----------
 
-let undoEntry: { kind: "add" | "delete"; chapter: Chapter; index: number } | null = null;
+type UndoKind = "add" | "import" | "delete";
+let undoEntry: { kind: UndoKind; chapters: Chapter[]; index: number } | null = null;
 
 /**
  * Add a pasted chapter at the end.
@@ -351,7 +354,7 @@ export function addChapter(rawIn: string | null | undefined): {
     pos: 0,
   });
   const ch = library.chapters.at(-1)!;
-  undoEntry = { kind: "add", chapter: ch, index: library.chapters.length - 1 };
+  undoEntry = { kind: "add", chapters: [ch], index: library.chapters.length - 1 };
   ui.flashId = ch.id;
   if (!ui.currentId) ui.currentId = ch.id; // the very first chapter opens itself
   return { status: "added", chapter: ch };
@@ -383,20 +386,42 @@ export function deleteChapter(id: string): Chapter | undefined {
   const index = library.chapters.findIndex((c) => c.id === id);
   if (index < 0) return;
   const [chapter] = library.chapters.splice(index, 1);
-  undoEntry = { kind: "delete", chapter: chapter!, index };
+  undoEntry = { kind: "delete", chapters: [chapter!], index };
   if (ui.currentId === id)
     ui.currentId = (library.chapters[index] ?? library.chapters[index - 1])?.id ?? null;
   return chapter;
 }
 
 /** Undo the last add or delete. Returns the entry kind, or null if nothing to undo. */
-export function undo(): "add" | "delete" | null {
+export function undo(): UndoKind | null {
   const e = undoEntry;
   if (!e) return null;
   undoEntry = null;
-  if (e.kind === "add") deleteChapterQuiet(e.chapter.id);
-  else library.chapters.splice(e.index, 0, e.chapter);
+  if (e.kind === "delete") library.chapters.splice(e.index, 0, ...e.chapters);
+  else for (const c of e.chapters) deleteChapterQuiet(c.id);
   return e.kind;
+}
+
+/** Add imported chapters (already titled) at the end, as one undo step. Returns them. */
+export function addChapters(list: { title: string; body: string }[]): Chapter[] {
+  const index = library.chapters.length;
+  for (const { title, body } of list)
+    library.chapters.push({
+      id: newId("c"),
+      title,
+      body,
+      raw: body,
+      addedAt: Date.now(),
+      short: body.split(/\s+/).length < 40,
+      pos: 0,
+    });
+  const added = library.chapters.slice(index);
+  if (added.length) {
+    undoEntry = { kind: "import", chapters: added, index };
+    ui.flashId = added[0]!.id;
+    ui.currentId ??= added[0]!.id;
+  }
+  return added;
 }
 function deleteChapterQuiet(id: string) {
   const i = library.chapters.findIndex((c) => c.id === id);

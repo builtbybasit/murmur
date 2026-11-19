@@ -11,6 +11,7 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
+    "@likecoin/epub-ts": "^0.7.4",
     "@lucide/vue": "^1.74.0",
     "@vueuse/core": "^15.0.0",
     "idb-keyval": "^6.3.0",

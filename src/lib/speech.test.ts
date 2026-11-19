@@ -1,6 +1,6 @@
 // Run: bun src/lib/speech.test.ts
 import assert from "node:assert/strict";
-import { compileRules, stripFaces, makeSpeaker } from "./speech";
+import { compileRules, stripFaces, makeSpeaker, describeImage } from "./speech";
 import { DEFAULT_RULES } from "./kaomoji";
 
 const eq = (a: string, b: string) => assert.equal(stripFaces(a), b, a);
@@ -72,3 +72,13 @@ assert.ok(
   "every default has a label and the suffix",
 );
 console.log("speech ok");
+
+// illustrations
+assert.equal(describeImage(""), "Illustration.");
+assert.equal(describeImage("cover.jpg"), "Illustration.");
+assert.equal(describeImage("image 3"), "Illustration.");
+assert.equal(
+  describeImage("A dragon circling the tower."),
+  "Illustration: A dragon circling the tower.",
+);
+console.log("illustrations ok");

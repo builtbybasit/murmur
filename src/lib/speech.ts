@@ -101,3 +101,19 @@ export function makeSpeaker(o: {
       .trim();
   return o.auto ? (t) => stripFaces(rules(t)) : (t) => tidy(rules(t));
 }
+
+/**
+ * What an illustration is read as: "Illustration." or, when the book describes it,
+ * "Illustration: a dragon over the city." File names and placeholder alt texts are ignored.
+ */
+export function describeImage(alt: string): string {
+  const a = alt
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[.!?…]+$/, "");
+  const real =
+    /\p{L}{3}/u.test(a) &&
+    !/\.(png|jpe?g|gif|svg|webp|avif)$/i.test(a) &&
+    !/^(image|img|picture|pic|figure|fig|illustration|cover|photo|untitled)[\s_-]*\d*$/i.test(a);
+  return real ? `Illustration: ${a}.` : "Illustration.";
+}

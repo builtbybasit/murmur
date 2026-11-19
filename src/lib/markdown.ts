@@ -12,7 +12,16 @@ const td = new TurndownService({
   bulletListMarker: "-",
   br: "", // <br> becomes a plain newline: every line is its own paragraph, like plain text
 });
-td.remove(["script", "style", "noscript", "iframe", "img", "button", "input"]);
+td.remove(["script", "style", "noscript", "iframe", "button", "input"]);
+// An image is its own paragraph. Only stored book images, web images and inline data images.
+td.addRule("img", {
+  filter: "img",
+  replacement: (_, n) => {
+    const src = (n as HTMLElement).getAttribute("src") ?? "";
+    const alt = ((n as HTMLElement).getAttribute("alt") ?? "").replace(/[[\]\n]/g, " ").trim();
+    return /^(img:|https?:|data:image\/)/.test(src) ? `\n\n![${alt}](${src})\n\n` : "";
+  },
+});
 td.addRule("link", { filter: "a", replacement: (c) => c }); // keep the words, drop the URL
 // Emphasis per line: Royal Road titles put a <br> inside <strong>, and "**a\n**" is not bold.
 const wrap = (d: string) => (c: string) =>
@@ -101,12 +110,16 @@ export const htmlToMarkdown = (html: string) =>
   td
     .turndown(html)
     .replace(/ /g, " ")
-    .replace(/^[ \t]+$/gm, "");
+    .replace(/[ \t]+$/gm, "") // trailing spaces
+    .replace(/\n\n[ \t]+/g, "\n\n"); // ponytail: no paragraph starts indented (flattens a nested list after a blank line)
 
 // ---------- Markdown -> lines ----------
 
 export interface Block {
-  tag: "p" | "h" | "li" | "tr";
+  tag: "p" | "h" | "li" | "tr" | "img";
+  /** image source and description, for tag "img" */
+  src?: string;
+  alt?: string;
   quote?: boolean;
   /** horizontal rule before this block (scene break) */
   rule?: boolean;
@@ -131,8 +144,8 @@ export interface Line {
 
 const md = markdownit({ html: false, linkify: false, typographer: false }).disable([
   "code", // indented text is just text in a novel
-  "image",
 ]);
+md.validateLink = (url) => /^(img:|https?:|data:image\/)/i.test(url);
 
 const MARK: Record<string, string> = { strong: "b", em: "i", s: "s" };
 
@@ -184,6 +197,13 @@ export function markdownLines(src: string): Line[] {
     rule = false;
     n = undefined;
   };
+  const lines = (kids: Token[]) => {
+    for (const s of inline(kids)) {
+      const c = unCentre(s);
+      if (c.text.trim())
+        emit({ tag: n ? "li" : tag, ...(n && { n }), ...(c !== s && { center: true }) }, [c]);
+    }
+  };
   for (const t of md.parse(src, {})) {
     switch (t.type) {
       case "blockquote_open":
@@ -227,7 +247,20 @@ export function markdownLines(src: string): Line[] {
           if (l.trim()) emit({ tag: "p" }, [{ text: l, marks: Array(l.length).fill("c") }]);
         break;
       case "inline": {
-        const spans = inline(t.children ?? []);
+        const kids = t.children ?? [];
+        if (!row && kids.some((k) => k.type === "image")) {
+          // text, image, text: the image becomes a block of its own
+          let from = 0;
+          kids.forEach((k, j) => {
+            if (k.type !== "image") return;
+            lines(kids.slice(from, j));
+            emit({ tag: "img", src: String(k.attrGet("src") ?? ""), alt: k.content }, []);
+            from = j + 1;
+          });
+          lines(kids.slice(from));
+          break;
+        }
+        const spans = inline(kids);
         if (row) {
           row.push({
             text: spans.map((s) => s.text).join(" "),
@@ -235,11 +268,7 @@ export function markdownLines(src: string): Line[] {
           });
           break;
         }
-        for (const s of spans) {
-          const c = unCentre(s);
-          if (c.text.trim())
-            emit({ tag: n ? "li" : tag, ...(n && { n }), ...(c !== s && { center: true }) }, [c]);
-        }
+        lines(kids);
       }
     }
   }

@@ -20,6 +20,8 @@ export interface Seg {
   lead: string;
   trail: string;
   words: Word[];
+  /** an illustration: spoken as a short sentence (see describeImage), shown as the image */
+  img?: { src: string; alt: string };
 }
 export interface Doc {
   paras: number[][];
@@ -152,7 +154,12 @@ export function buildDoc(body: string, smart = true): Doc {
   };
 
   for (const { block, parts } of markdownLines(body)) {
-    if (block.tag === "tr") paras.push(row(parts));
+    if (block.tag === "img") {
+      const idx: number[] = [];
+      push("narr", "", "", [], idx);
+      segs.at(-1)!.img = { src: block.src!, alt: block.alt ?? "" };
+      paras.push(idx);
+    } else if (block.tag === "tr") paras.push(row(parts));
     else {
       const s = parts[0]!;
       const lead = s.text.length - s.text.trimStart().length;

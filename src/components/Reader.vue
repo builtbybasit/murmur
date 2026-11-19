@@ -13,6 +13,7 @@ import {
   CHARS_PER_SEC,
 } from "../store";
 import type { Seg, Word } from "../lib/segment";
+import { imageUrl } from "../lib/images";
 import { player, seek, nextChapter } from "../engine";
 
 const scroller = ref<HTMLElement | null>(null);
@@ -57,6 +58,14 @@ const html = computed(() => {
       out += quote ? "<blockquote>" : "</blockquote>";
     }
     if (b.rule) out += "<hr>";
+    if (b.tag === "img") {
+      // book images load from IndexedDB after render (fillImages); web images load directly
+      const s = d.segs[idx[0]!]!;
+      const src = s.img!.src;
+      const at = src.startsWith("img:") ? `data-img="${attr(src.slice(4))}"` : `src="${attr(src)}"`;
+      out += `<p class="fig"><span class="seg narr" data-s="${s.i}"><img ${at} alt="${attr(s.img!.alt)}" loading="lazy"></span></p>`;
+      return;
+    }
     if (b.tag === "tr") {
       if (!table) out += "<table>";
       table = b.table!;
@@ -240,7 +249,16 @@ function reveal(instant = false) {
 }
 
 // new chapter: start at the top, or jump straight to the resume position
+function fillImages() {
+  for (const im of textEl.value?.querySelectorAll<HTMLImageElement>("img[data-img]") ?? [])
+    void imageUrl(im.dataset.img!).then((u) => {
+      if (u) im.src = u;
+      else im.alt ||= "Image missing";
+    });
+}
+
 function onDoc() {
+  fillImages();
   if (scroller.value) scroller.value.scrollTop = 0;
   paint();
   paintBad();
@@ -279,10 +297,12 @@ function backToCurrent() {
 }
 
 function onClick(e: MouseEvent) {
-  const w = (e.target as Element).closest<HTMLElement>(".w");
-  const s = w?.parentElement;
-  if (!w || !s?.dataset.s) return;
-  seek(+s.dataset.s, +w.dataset.w!);
+  const t = e.target as Element;
+  const w = t.closest<HTMLElement>(".w");
+  if (!w && !t.closest(".fig")) return; // words and images seek; gaps between words do not
+  const s = t.closest<HTMLElement>(".seg");
+  if (!s?.dataset.s) return;
+  seek(+s.dataset.s, w ? +w.dataset.w! : 0);
 }
 </script>
 
@@ -435,6 +455,25 @@ function onClick(e: MouseEvent) {
   font-size: 1.15em;
   font-weight: 700;
   color: var(--ink-hi);
+}
+.text :deep(p.fig) {
+  margin: 1.4em 0;
+  text-align: center;
+}
+.text :deep(p.fig .seg) {
+  display: inline-block;
+  padding: 4px;
+  border-radius: var(--r3);
+  cursor: pointer;
+}
+.text :deep(p.fig img) {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  border-radius: var(--r2);
+}
+.text :deep(p.fig .seg.cur) {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--k) 45%, transparent);
 }
 .text :deep(p.ctr) {
   text-align: center;

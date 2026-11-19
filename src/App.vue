@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { watchEffect } from "vue";
+import { defineAsyncComponent, watchEffect } from "vue";
 import { useEventListener, useMediaQuery, usePreferredDark } from "@vueuse/core";
 import TopBar from "./components/TopBar.vue";
 import Sidebar from "./components/Sidebar.vue";
@@ -9,6 +9,8 @@ import PlayerBar from "./components/PlayerBar.vue";
 import Reader from "./components/Reader.vue";
 import Settings from "./components/Settings.vue";
 import Onboarding from "./components/Onboarding.vue";
+// loaded on first use: epub-ts and jszip stay out of the main bundle
+const EpubImport = defineAsyncComponent(() => import("./components/EpubImport.vue"));
 import { settings, ui, library, FONTS } from "./store";
 import { addFromText, undoWithToast } from "./paste";
 import * as engine from "./engine";
@@ -39,6 +41,17 @@ useEventListener(document, "paste", (e: ClipboardEvent) => {
   if (inField(e.target)) return;
   e.preventDefault();
   addFromText(e.clipboardData?.getData("text/plain"), e.clipboardData?.getData("text/html"));
+});
+
+// drop an .epub anywhere to import it
+useEventListener(document, "dragover", (e: DragEvent) => {
+  if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
+});
+useEventListener(document, "drop", (e: DragEvent) => {
+  const f = Array.from(e.dataTransfer?.files ?? []).find((f) => /\.epub$/i.test(f.name));
+  if (!f) return;
+  e.preventDefault();
+  ui.epubFile = f;
 });
 
 const speed = (d: number) => engine.setSpeed(Math.round((settings.speed + d) * 10) / 10);
@@ -124,6 +137,7 @@ useEventListener(document, "keydown", (e: KeyboardEvent) => {
     <div class="bottom"><PlayerBar /></div>
     <Toast />
     <ShortcutSheet />
+    <EpubImport v-if="ui.epubFile" :key="ui.epubFile.name + ui.epubFile.lastModified" />
   </div>
 </template>
 

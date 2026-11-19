@@ -72,6 +72,18 @@ assert.deepEqual(
   ],
 );
 
+// images: their own block, spoken via describeImage; unknown sources are dropped
+assert.equal(
+  htmlToMarkdown(`<p>Before <img src="img:ab12" alt="A map"> after</p><img src="x.png">`),
+  "Before\n\n![A map](img:ab12)\n\nafter",
+);
+const im = buildDoc("Before ![A map](img:ab12) after");
+assert.deepEqual(
+  im.blocks.map((b) => b.tag),
+  ["p", "img", "p"],
+);
+assert.deepEqual(im.segs[1]!.img, { src: "img:ab12", alt: "A map" });
+
 // plain text is Markdown too: every line a paragraph
 assert.equal(buildDoc("One.\nTwo *sighs*.\n\nThree.").paras.length, 3);
 console.log("markdown ok");

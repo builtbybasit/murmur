@@ -19,7 +19,7 @@ import type { Doc, Seg } from "./lib/segment";
 import { tts, stt as transcribe, ApiError, type ErrorCode, type ProviderError } from "./lib/api";
 import { alignWords, estimateTimes, type Span, type SttWord } from "./lib/align";
 import * as cache from "./lib/cache";
-import { makeSpeaker } from "./lib/speech";
+import { describeImage, makeSpeaker } from "./lib/speech";
 
 export type Status = "idle" | "buffering" | "playing" | "paused" | "error" | "ended";
 export type SegState = "loading" | "ready" | "failed";
@@ -124,7 +124,10 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 const estDur = (i: number) => durs[i] ?? segs()[i]!.core.length / CHARS_PER_SEC;
 /** What the TTS is sent for a segment (rules + emoji/kaomoji removal). Recompiled when settings change. */
 const speaker = computed(() => makeSpeaker(settings.speech));
-const sayOf = (i: number) => speaker.value(segs()[i]!.core);
+/** What the TTS is sent for a segment; "" plays a short silence. */
+const spoken = (seg: Seg) =>
+  seg.img ? (settings.speech.images ? describeImage(seg.img.alt) : "") : speaker.value(seg.core);
+const sayOf = (i: number) => spoken(segs()[i]!);
 const before = (i: number) => {
   let s = 0;
   for (let j = 0; j < i; j++) s += estDur(j);
@@ -133,7 +136,7 @@ const before = (i: number) => {
 /** Cache key of a segment of any chapter: provider, model, voice and spoken text. */
 const keyOf = (seg: Seg) => {
   const v = voiceFor(seg.kind);
-  return cache.cacheKey(v.provider?.baseUrl ?? "", v.model, v.voice, speaker.value(seg.core));
+  return cache.cacheKey(v.provider?.baseUrl ?? "", v.model, v.voice, spoken(seg));
 };
 const keyFor = (i: number) => keyOf(segs()[i]!);
 const timesOf = (i: number, m: Mem) => m.times ?? (m.est ??= estimateTimes(segs()[i]!, m.duration));
@@ -422,7 +425,7 @@ async function prefetchNext() {
   const ac = new AbortController();
   ahead = { id: c.id, ac };
   for (const seg of docOf(c).segs.slice(0, Math.max(1, settings.prefetch))) {
-    const say = speaker.value(seg.core);
+    const say = spoken(seg);
     const v = voiceFor(seg.kind);
     const key = keyOf(seg);
     if (!say || !v.provider || (await cache.getEntry(key).catch(() => null))) continue;

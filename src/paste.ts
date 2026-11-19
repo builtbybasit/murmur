@@ -38,7 +38,14 @@ export function undoWithToast() {
   const k = undo();
   toast(
     k
-      ? { title: k === "add" ? "Chapter removed" : "Chapter restored" }
+      ? {
+          title:
+            k === "add"
+              ? "Chapter removed"
+              : k === "import"
+                ? "Import removed"
+                : "Chapter restored",
+        }
       : { title: "Nothing to undo" },
     3000,
   );

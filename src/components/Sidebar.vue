@@ -151,6 +151,12 @@ function onRowKey(e: KeyboardEvent, c: Chapter, i: number) {
   } else return;
   e.preventDefault();
 }
+
+function pickEpub(e: Event) {
+  const input = e.target as HTMLInputElement;
+  if (input.files?.[0]) ui.epubFile = input.files[0];
+  input.value = ""; // the same file can be picked again
+}
 </script>
 
 <template>
@@ -240,6 +246,13 @@ function onRowKey(e: KeyboardEvent, c: Chapter, i: number) {
       </div>
       <div class="slot-b">
         <button class="btn" @click="pasteFromClipboard">Paste from clipboard</button>
+        <label class="btn" title="Import chapters from an EPUB book (or drop the file anywhere)"
+          >Import EPUB<input
+            type="file"
+            accept=".epub,application/epub+zip"
+            hidden
+            @change="pickEpub"
+        /></label>
       </div>
     </div>
   </aside>

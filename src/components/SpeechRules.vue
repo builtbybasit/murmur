@@ -61,6 +61,14 @@ function restore() {
     and normal punctuation are left alone. Turn it off for Chinese or Japanese text.
   </p>
 
+  <label class="sw"
+    ><input v-model="settings.speech.images" type="checkbox" /> Say “Illustration” for images</label
+  >
+  <p class="hint tight">
+    Each picture in an imported book is read as “Illustration.”, or “Illustration: a dragon over the
+    city.” when the book describes it. Off: the voice passes over pictures silently.
+  </p>
+
   <div class="try">
     <label
       >Try it<textarea v-model="sample" rows="2" spellcheck="false" aria-label="Sample text" />
