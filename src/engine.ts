@@ -15,7 +15,7 @@ import {
   type Provider,
   type Role,
 } from "./store";
-import type { Doc } from "./lib/segment";
+import type { Doc, Seg } from "./lib/segment";
 import { tts, stt as transcribe, ApiError, type ErrorCode, type ProviderError } from "./lib/api";
 import { alignWords, estimateTimes, type Span, type SttWord } from "./lib/align";
 import * as cache from "./lib/cache";
@@ -130,11 +130,12 @@ const before = (i: number) => {
   for (let j = 0; j < i; j++) s += estDur(j);
   return s;
 };
-const keyFor = (i: number) => {
-  const seg = segs()[i]!;
+/** Cache key of a segment of any chapter: provider, model, voice and spoken text. */
+const keyOf = (seg: Seg) => {
   const v = voiceFor(seg.kind);
-  return cache.cacheKey(v.provider?.baseUrl ?? "", v.model, v.voice, sayOf(seg.i));
+  return cache.cacheKey(v.provider?.baseUrl ?? "", v.model, v.voice, speaker.value(seg.core));
 };
+const keyFor = (i: number) => keyOf(segs()[i]!);
 const timesOf = (i: number, m: Mem) => m.times ?? (m.est ??= estimateTimes(segs()[i]!, m.duration));
 const toPlain = (e: unknown): ProviderError =>
   e instanceof ApiError
@@ -325,6 +326,7 @@ function load(
   o: { seg?: number; autoplay?: boolean; keepStarted?: boolean } = {},
 ) {
   endGap(false);
+  stopAhead(id); // opening the prefetched chapter lets it finish
   const same = id === chId;
   wantPlay = false;
   ended = false;
@@ -407,6 +409,37 @@ function kick() {
   if (wantPlay && m && !fails[i] && loaded !== i) startAudio(i, m);
   refreshStatus();
   pumpStt();
+  void prefetchNext();
+}
+
+// Next chapter: near the end of this one, its first segments go into the cache, one at a time,
+// so it starts without a wait. They play from the cache when it opens.
+let ahead: { id: string; ac: AbortController } | null = null;
+async function prefetchNext() {
+  const n = segs().length;
+  const c = chapterAt(1);
+  if (!wantPlay || !c || ahead?.id === c.id || player.seg + settings.prefetch < n - 1) return;
+  const ac = new AbortController();
+  ahead = { id: c.id, ac };
+  for (const seg of docOf(c).segs.slice(0, Math.max(1, settings.prefetch))) {
+    const say = speaker.value(seg.core);
+    const v = voiceFor(seg.kind);
+    const key = keyOf(seg);
+    if (!say || !v.provider || (await cache.getEntry(key).catch(() => null))) continue;
+    try {
+      const blob = await tts({ ...v, provider: v.provider, input: say, signal: ac.signal });
+      const duration = (await durationOf(blob)) ?? say.length / CHARS_PER_SEC;
+      await cache.putEntry(key, { blob, duration, bytes: blob.size, stt: null, at: Date.now() });
+    } catch {
+      return; // aborted or failing: the chapter fetches (and reports) it itself when it opens
+    }
+  }
+}
+function stopAhead(keep?: string | null) {
+  if (ahead && ahead.id !== keep) {
+    ahead.ac.abort();
+    ahead = null;
+  }
 }
 
 function startAudio(i: number, m: Mem) {
@@ -717,6 +750,7 @@ watch(
 );
 
 function refresh() {
+  stopAhead(); // voices or spoken text changed: the prefetched keys are stale
   if (!doc) return;
   resetWork(loaded);
   void scan();
