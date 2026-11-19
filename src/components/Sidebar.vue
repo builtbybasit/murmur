@@ -310,12 +310,7 @@ function pickEpub(e: Event) {
           :aria-label="genTitle(c)"
           @click.stop="toggleGenerate(c.id)"
         >
-          <svg
-            v-if="genState(c) === 'running'"
-            viewBox="0 0 16 16"
-            width="14"
-            height="14"
-          >
+          <svg v-if="genState(c) === 'running'" viewBox="0 0 16 16" width="14" height="14">
             <circle cx="8" cy="8" r="6" class="track" />
             <circle
               cx="8"

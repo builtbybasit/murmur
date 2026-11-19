@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch, onBeforeUnmount } from "vue";
-import { Play, Pause, SkipBack, SkipForward, TriangleAlert } from "@lucide/vue";
+import { Moon, Play, Pause, SkipBack, SkipForward, TriangleAlert } from "@lucide/vue";
 import {
   ui,
   settings,
@@ -12,7 +12,19 @@ import {
   hasTts,
   CHARS_PER_SEC,
 } from "../store";
-import { player, toggle, prev, next, seek, retry, skip, retryAlignment, setSpeed } from "../engine";
+import {
+  player,
+  toggle,
+  prev,
+  next,
+  seek,
+  retry,
+  skip,
+  retryAlignment,
+  setSpeed,
+  sleepTimer,
+  setSleep,
+} from "../engine";
 
 const doc = computed(() => currentDoc.value || null);
 const seg = computed(() => doc.value?.segs[player.seg] ?? null);
@@ -216,6 +228,36 @@ function onPopToggle(e: Event) {
   st.right = Math.max(8, innerWidth - r.right) + "px";
   st.bottom = innerHeight - r.top + 10 + "px";
 }
+// popovers open above the chip that opened them
+function placeAbove(e: Event, chip: HTMLElement | null) {
+  const pop = e.target as HTMLElement;
+  if ((e as ToggleEvent).newState !== "open" || !chip) return;
+  const r = chip.getBoundingClientRect();
+  pop.style.right = Math.max(8, innerWidth - r.right) + "px";
+  pop.style.bottom = innerHeight - r.top + 10 + "px";
+}
+const sleepEl = ref<HTMLElement | null>(null);
+const sleepPop = ref<HTMLElement | null>(null);
+const SLEEP: [string, null | "chapter" | number][] = [
+  ["Off", null],
+  ["End of chapter", "chapter"],
+  ["15 minutes", 15],
+  ["30 minutes", 30],
+  ["45 minutes", 45],
+  ["1 hour", 60],
+];
+const sleepLabel = computed(() =>
+  sleepTimer.mode === "chapter"
+    ? "end of chapter"
+    : sleepTimer.mode === "time"
+      ? Math.ceil(sleepTimer.left / 60_000) + "m"
+      : "",
+);
+function pickSleep(v: null | "chapter" | number) {
+  setSleep(v);
+  sleepPop.value?.hidePopover();
+}
+
 function runTiming(run: () => unknown) {
   run();
   popEl.value?.hidePopover();
@@ -323,6 +365,16 @@ const step = (d: number) => setSpeed(Math.round((settings.speed + d) * 10) / 10)
           >
             <i class="ring" /><span>{{ timing.label }}</span>
           </button>
+          <button
+            ref="sleepEl"
+            class="chip sleep"
+            :class="{ on: sleepTimer.mode }"
+            :title="sleepTimer.mode ? `Sleep timer: ${sleepLabel}` : 'Sleep timer'"
+            aria-label="Sleep timer"
+            popovertarget="lectern-sleep"
+          >
+            <Moon :size="13" /><span v-if="sleepTimer.mode">{{ sleepLabel }}</span>
+          </button>
         </template>
         <div class="speed">
           <button title="Slower ([)" aria-label="Slower" @click="step(-0.1)">−</button>
@@ -334,6 +386,27 @@ const step = (d: number) => setSpeed(Math.round((settings.speed + d) * 10) / 10)
       </div>
     </footer>
 
+    <div
+      id="lectern-sleep"
+      ref="sleepPop"
+      popover
+      class="pop menu"
+      @toggle="placeAbove($event, sleepEl)"
+    >
+      <h4>Sleep timer</h4>
+      <button
+        v-for="[label, v] in SLEEP"
+        :key="label"
+        :class="{
+          on:
+            (v === null && !sleepTimer.mode) || (v === 'chapter' && sleepTimer.mode === 'chapter'),
+        }"
+        @click="pickSleep(v)"
+      >
+        {{ label }}
+      </button>
+      <p class="note">Counts only while playing, and fades out over the last few seconds.</p>
+    </div>
     <div id="lectern-timing" ref="popEl" popover class="pop" @toggle="onPopToggle">
       <h4>Highlight timing · {{ timing.label }}</h4>
       <p>{{ timing.body }}</p>
@@ -545,6 +618,36 @@ const step = (d: number) => setSpeed(Math.round((settings.speed + d) * 10) / 10)
 .chip.al .ring {
   background: var(--acc);
   border-color: var(--acc);
+}
+.chip.sleep.on {
+  color: var(--acc);
+  border-color: color-mix(in srgb, var(--acc) 45%, var(--line));
+}
+.pop.menu {
+  width: 200px;
+  padding: 8px;
+  display: grid;
+}
+.pop.menu h4 {
+  margin: 4px 8px 6px;
+}
+.pop.menu button {
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: var(--r2);
+  font-size: 13px;
+}
+.pop.menu button:hover {
+  background: var(--hover);
+}
+.pop.menu button.on {
+  color: var(--acc);
+  font-weight: 600;
+}
+.pop.menu .note {
+  margin: 6px 8px 2px;
+  font-size: 11.5px;
+  color: var(--ink3);
 }
 .chip.warn .ring {
   border-color: var(--warn);

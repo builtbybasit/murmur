@@ -646,7 +646,13 @@ function advance() {
     return;
   }
   const next = chapterAt(1);
+  if (next && sleepTimer.mode === "chapter") {
+    setSleep(null);
+    open(next.id, { seg: 0 }); // ready at the next chapter, paused
+    return toast({ title: "Sleep timer: stopped at the end of the chapter" });
+  }
   if (next) return open(next.id, { autoplay: true, seg: 0 });
+  if (sleepTimer.mode === "chapter") setSleep(null);
   stopAudio();
   wantPlay = false;
   ended = true;
@@ -948,6 +954,31 @@ function noteCached(i: number, e: cache.CacheEntry) {
     }
   }
   updateTotals();
+}
+
+// ---------- sleep timer ----------
+
+/** mode "time": `left` ms of listening remain (it only counts while playing); "chapter": stop at its end. */
+export const sleepTimer = reactive({ mode: null as null | "chapter" | "time", left: 0 });
+const FADE_MS = 8000;
+let sleepTick: ReturnType<typeof setInterval> | undefined;
+
+/** null = off, "chapter" = at the end of this chapter, a number = minutes of listening. */
+export function setSleep(mode: null | "chapter" | number) {
+  clearInterval(sleepTick);
+  if (audio) audio.volume = 1;
+  sleepTimer.mode = mode === null ? null : mode === "chapter" ? "chapter" : "time";
+  sleepTimer.left = typeof mode === "number" ? mode * 60_000 : 0;
+  if (typeof mode !== "number") return;
+  sleepTick = setInterval(() => {
+    if (player.status !== "playing" && player.status !== "buffering") return;
+    sleepTimer.left -= 1000;
+    if (audio) audio.volume = clamp(sleepTimer.left / FADE_MS, 0, 1); // fade out at the end
+    if (sleepTimer.left > 0) return;
+    pause();
+    setSleep(null);
+    toast({ title: "Sleep timer: paused", sub: "Press play to continue" });
+  }, 1000);
 }
 
 // ---------- public API ----------
