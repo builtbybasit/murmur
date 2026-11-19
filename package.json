@@ -7,8 +7,9 @@
     "dev": "vp dev",
     "build": "vp build",
     "preview": "vp preview",
-    "test": "bun src/lib/segment.test.ts && bun src/lib/markdown.test.ts && bun src/lib/align.test.ts && bun src/lib/voice.test.ts && bun src/lib/speech.test.ts",
-    "typecheck": "vue-tsc --noEmit"
+    "test": "for f in src/lib/*.test.ts; do bun $f || exit 1; done",
+    "typecheck": "vue-tsc --noEmit",
+    "check": "vp check"
   },
   "dependencies": {
     "@likecoin/epub-ts": "^0.7.4",

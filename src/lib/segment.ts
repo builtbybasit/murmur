@@ -172,7 +172,7 @@ export function buildDoc(body: string, smart = true): Doc {
 }
 
 /** "[You gained a level.]" or a line in bold: a LitRPG system message. */
-export function isSystem({ text, marks }: Span): boolean {
+function isSystem({ text, marks }: Span): boolean {
   if (/^\[[\s\S]*\][.!?…]*$/.test(text)) return true;
   const starts = [...text.matchAll(/\S+/g)].map((m) => m.index!);
   return !!starts.length && starts.every((i) => /\bb\b/.test(marks[i] ?? ""));

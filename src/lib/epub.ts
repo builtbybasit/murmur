@@ -4,7 +4,7 @@ import { Book, type NavItem, type Section } from "@likecoin/epub-ts";
 import { htmlToMarkdown, plainTitle } from "./markdown";
 import { putImage } from "./images";
 
-export interface EpubItem {
+interface EpubItem {
   title: string;
   words: number;
   images: number;

@@ -1,11 +1,7 @@
 # lectern: UI/UX design (v1)
 
 Local, single-user reader that speaks webnovel chapters and highlights each word as it is spoken.
-Vue 3 + Vite front end, a small Hono relay in front of OpenAI-compatible providers.
-
-Companion file: `mockup.html` (open it directly; the strip at the top jumps between every state below).
-Deep links work too: `mockup.html#e401`, `#long`, `#playing,light`, `#playing,dark`, `#settings,tab=voices`.
-Controls with a dotted magenta outline exist only in the mockup (the state strip, `Paste sample`).
+Vue 3 + Vite front end; the dev server (dev/server.ts) relays to OpenAI-compatible providers and keeps the shared library.
 
 Design principles, in priority order:
 
@@ -319,11 +315,9 @@ Reading measure defaults to 66ch. UI type inside the reading column (the meta li
 
 ## 9. Notes for the build
 
-- Suggested storage: settings and keys in `localStorage`; chapters, audio blobs and word timings in IndexedDB (a few 5k-word chapters of audio will not fit in `localStorage`).
+- Storage: chapters, positions, images, settings and API keys on the server in `~/.lectern`; audio blobs and word timings in each browser's IndexedDB; reading look in `localStorage`.
 - Cache key: `hash(provider base URL, model, voice, segment text)`. Renaming, reordering and re-segmenting do not invalidate unchanged segments.
-- Popovers and the shortcut sheet in the mockup use the native Popover API and `<dialog>`. In the Vue build, reka-ui equivalents are fine; behaviour should match.
-- The mockup's segmenter is real and has a small self-check at the top of its script. It can be lifted as the starting point.
-- The mockup fakes audio with timers. Its "aligned" timing adds pauses after punctuation so the two modes feel different; real timings come from STT.
+- Popovers and the shortcut sheet use the native Popover API and `<dialog>`.
 
 ## Later (not in v1)
 
