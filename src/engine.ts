@@ -53,6 +53,7 @@ interface SttState {
 }
 interface Player {
   status: Status;
+  chapter: string | null; // the chapter the counts below are for
   started: boolean; // playback has started in this chapter (reader shows band/word only then)
   seg: number; // current segment index in currentDoc
   word: number; // current word index in segs[seg].words, -1 = none
@@ -73,6 +74,7 @@ const freshStt = (): SttState => ({ failing: false, fails: 0, paused: false, mes
 /** Failed segments of the open chapter. */
 const fails = reactive<Record<number, PlayerError>>({});
 export const player = reactive<Player>({
+  chapter: null,
   status: "idle",
   started: false,
   seg: 0,
@@ -323,6 +325,7 @@ function load(
   resetWork();
   chId = id;
   doc = hasBody(c) ? docOf(c) : null;
+  player.chapter = id;
   const n = segs().length;
   Object.assign(player, {
     started: !!o.keepStarted && player.started,

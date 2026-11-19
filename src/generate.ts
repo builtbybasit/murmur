@@ -2,7 +2,15 @@
 import { reactive, watch } from "vue";
 import { useLocalStorage } from "@vueuse/core";
 import { settings } from "./settings";
-import { library, docOf, hasBody, loadBodies, loadAllBodies, type Chapter } from "./library";
+import {
+  library,
+  docOf,
+  hasBody,
+  loadBodies,
+  loadAllBodies,
+  statsOf,
+  type Chapter,
+} from "./library";
 import { player, recountUntimed, rescan } from "./engine";
 import { align, audioSig, getAudio, keyOf, retrying, spoken, sttProvider } from "./synth";
 import { toError } from "./lib/api";
@@ -59,16 +67,26 @@ watch(audioSig, () => {
   generating[id] = { state: "queued", done: 0, total: 0, error: "" };
   queue.unshift(id);
 });
-// Changed text (here or on another device): some segments need audio again.
+// Changed text (here or on another device): some segments need audio again. Compared by hash:
+// a text arriving in the background (see loadBodies) is not a change.
 // Deleted chapters: their jobs stop.
 watch(
-  () => library.chapters.map((c) => [c.id, c.body] as const),
+  () => library.chapters.map((c) => [c.id, statsOf(c).h] as const),
   (now, old) => {
     const was = new Map(old);
-    for (const [id, body] of now)
-      if (was.has(id) && was.get(id) !== body) delete readyMarks.value[id];
+    for (const [id, h] of now) if (was.has(id) && was.get(id) !== h) delete readyMarks.value[id];
     const ids = new Set(now.map(([id]) => id));
     for (const id in generating) if (!ids.has(id)) stop(id);
+  },
+);
+
+// All of the open chapter's audio is here (you listened through it, or it was generated while you
+// played): it is done too, as if generated in the background.
+watch(
+  () => [player.chapter, player.cachedCount, player.spokenCount, player.untimedCount] as const,
+  ([id, cached, spoken, untimed]) => {
+    if (id && spoken && cached >= spoken && !(untimed && sttProvider()))
+      readyMarks.value[id] = audioSig.value;
   },
 );
 
