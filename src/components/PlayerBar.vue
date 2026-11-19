@@ -1,32 +1,20 @@
 <script setup lang="ts">
-import { computed, ref, watch, onBeforeUnmount } from "vue";
-import { Moon, Play, Pause, SkipBack, SkipForward, TriangleAlert } from "@lucide/vue";
-import { settings, voiceFor, providerById, hasTts } from "../settings";
+import { computed } from "vue";
+import { Play, Pause, SkipBack, SkipForward } from "@lucide/vue";
+import { settings, voiceFor, hasTts } from "../settings";
 import { current, currentDoc, CHARS_PER_SEC } from "../library";
-import { ui, openSettings, placePopover } from "../ui";
+import { ui, openSettings } from "../ui";
 import { MOD, clock, minutes, plural } from "../lib/format";
-import {
-  player,
-  toggle,
-  prev,
-  next,
-  seek,
-  retry,
-  skip,
-  retryAlignment,
-  setSpeed,
-  sleepTimer,
-  setSleep,
-  upNext,
-} from "../engine";
+import { player, toggle, prev, next, seek, setSpeed, upNext } from "../engine";
+import ErrorBar from "./ErrorBar.vue";
+import SleepChip from "./SleepChip.vue";
+import TimingChip from "./TimingChip.vue";
 
 const doc = computed(() => currentDoc.value || null);
 const seg = computed(() => doc.value?.segs[player.seg] ?? null);
 const nSegs = computed(() => doc.value?.segs.length ?? 0);
 const kind = computed(() => seg.value?.kind ?? "narr");
 const voice = computed(() => voiceFor(kind.value));
-
-const host = (url = "") => url.replace(/^https?:\/\//, "").replace(/\/.*$/, "") || "the provider";
 
 const phase = computed(() => {
   if (!current.value || !doc.value) return "empty";
@@ -78,55 +66,6 @@ const status = computed(() => {
   };
 });
 
-// ---------- error strip ----------
-// ticks only while an automatic retry is pending, for the countdown
-const now = ref(Date.now());
-let tick: ReturnType<typeof setInterval> | undefined;
-watch(
-  () => player.error?.retryAt,
-  (at) => {
-    clearInterval(tick);
-    now.value = Date.now();
-    if (at) tick = setInterval(() => (now.value = Date.now()), 250);
-  },
-  { immediate: true },
-);
-onBeforeUnmount(() => clearInterval(tick));
-const err = computed(() => {
-  const e = player.error;
-  if (!e) return null;
-  const p = providerById(e.providerId);
-  const name = p?.name || "The provider";
-  let code: string, msg: string;
-  if (e.code === "auth") {
-    code = `${e.status || 401} ${e.status === 403 ? "Forbidden" : "Unauthorized"}`;
-    msg = `${name} rejected the API key. Nothing is retried until the key is fixed.`;
-  } else {
-    if (e.code === "rate") {
-      code = "429 Too Many Requests";
-      msg = `${name} is rate limiting.`;
-    } else if (e.code === "network") {
-      code = "Network error";
-      msg = `Can't reach ${host(p?.baseUrl)}. Is the server running?`;
-    } else {
-      code = `HTTP ${e.status}`;
-      msg = e.message || `${name} returned an error.`;
-    }
-    if (e.gaveUp) msg += ` Gave up after ${e.maxAttempts} attempts.`;
-    else if (e.retryAt) {
-      const secs = Math.max(0, Math.ceil((e.retryAt - now.value) / 1000));
-      msg += ` Retrying in ${secs} s (attempt ${e.attempt} of ${e.maxAttempts}).`;
-    }
-  }
-  return {
-    code,
-    msg,
-    auth: e.code === "auth",
-    auto: !!e.retryAt && !e.gaveUp,
-    openProv: e.code === "network" || e.code === "http",
-  };
-});
-
 // ---------- progress track (weighted by characters) ----------
 const cum = computed(() => {
   const out = [0];
@@ -159,97 +98,12 @@ function onTrack(e: MouseEvent) {
   seek(k < 0 ? nSegs.value - 1 : Math.max(0, k - 1));
 }
 
-// ---------- timing chip ----------
-const timing = computed(() => {
-  const stt = settings.stt;
-  const p = providerById(stt.providerId);
-  if (!stt.enabled || !p)
-    return {
-      label: "Estimated",
-      cls: "",
-      body: "Word alignment is off, so the highlight is timed from character positions. It drifts a little on long sentences.",
-      act: stt.enabled
-        ? { label: "Alignment settings", run: () => openSettings("segments") }
-        : { label: "Turn on", run: () => (settings.stt.enabled = true) },
-    };
-  if (player.stt.failing)
-    return {
-      label: "Estimated",
-      cls: "warn",
-      body:
-        `${p.name} failed on ${plural(player.stt.fails, "segment")}${player.stt.message ? ` (${player.stt.message})` : ""}` +
-        `${player.stt.paused ? ", so alignment is paused for this chapter" : ""}. Audio is not affected.`,
-      act: { label: "Retry alignment", run: retryAlignment },
-      act2: { label: "Turn off", run: () => (settings.stt.enabled = false) },
-    };
-  if (player.timing === "aligned")
-    return {
-      label: "Aligned",
-      cls: "al",
-      body: `Word timestamps from ${p.name} (${stt.model}). The underlined highlight means the word is timed from the real audio.`,
-    };
-  return {
-    label: "Estimated",
-    cls: "",
-    body: "The transcript for this segment has not arrived yet. The highlight is estimated until it does, then switches over without a jump.",
-  };
-});
-const timingPop = ref<HTMLElement | null>(null);
-const sleepPop = ref<HTMLElement | null>(null);
-const SLEEP: [string, null | "chapter" | number][] = [
-  ["Off", null],
-  ["End of chapter", "chapter"],
-  ["15 minutes", 15],
-  ["30 minutes", 30],
-  ["45 minutes", 45],
-  ["1 hour", 60],
-];
-const sleepLabel = computed(() =>
-  sleepTimer.mode === "chapter"
-    ? "end of chapter"
-    : sleepTimer.mode === "time"
-      ? Math.ceil(sleepTimer.left / 60_000) + "m"
-      : "",
-);
-const sleepMins = ref(0); // the duration picked, to mark it in the menu
-function pickSleep(v: null | "chapter" | number) {
-  setSleep(v);
-  if (typeof v === "number") sleepMins.value = v;
-  sleepPop.value?.hidePopover();
-}
-
-function runTiming(run: () => unknown) {
-  run();
-  timingPop.value?.hidePopover();
-}
-
 const step = (d: number) => setSpeed(Math.round((settings.speed + d) * 10) / 10);
 </script>
 
 <template>
   <div class="pb">
-    <div v-if="err" class="errbar" role="status">
-      <span class="code"><TriangleAlert :size="16" :stroke-width="1.75" />{{ err.code }}</span>
-      <span class="msg">{{ err.msg }}</span>
-      <button
-        v-if="err.auth"
-        class="btn pri"
-        @click="openSettings('providers', player.error!.providerId, true)"
-      >
-        Fix key
-      </button>
-      <button class="btn" :class="{ pri: !err.auth }" @click="retry()">
-        {{ err.auto ? "Retry now" : "Retry" }} <kbd>R</kbd>
-      </button>
-      <button
-        v-if="err.openProv && !player.error!.gaveUp"
-        class="btn"
-        @click="openSettings('providers', player.error!.providerId)"
-      >
-        Open provider
-      </button>
-      <button class="btn ghost" @click="skip()">Skip segment</button>
-    </div>
+    <ErrorBar />
 
     <footer class="player" :data-ph="phase">
       <div class="track" title="Click to jump" @click="onTrack">
@@ -317,18 +171,8 @@ const step = (d: number) => setSpeed(Math.round((settings.speed + d) * 10) / 10)
             }}</span>
             <b>{{ voice.voice || "no voice set" }}</b>
           </button>
-          <button class="chip timing" :class="timing.cls" popovertarget="lectern-timing">
-            <i class="ring" /><span>{{ timing.label }}</span>
-          </button>
-          <button
-            class="chip sleep"
-            :class="{ on: sleepTimer.mode }"
-            :title="sleepTimer.mode ? `Sleep timer: ${sleepLabel}` : 'Sleep timer'"
-            aria-label="Sleep timer"
-            popovertarget="lectern-sleep"
-          >
-            <Moon :size="13" /><span v-if="sleepTimer.mode">{{ sleepLabel }}</span>
-          </button>
+          <TimingChip />
+          <SleepChip />
         </template>
         <div class="speed">
           <button title="Slower ([)" aria-label="Slower" @click="step(-0.1)">−</button>
@@ -339,72 +183,10 @@ const step = (d: number) => setSpeed(Math.round((settings.speed + d) * 10) / 10)
         </div>
       </div>
     </footer>
-
-    <div
-      id="lectern-sleep"
-      ref="sleepPop"
-      popover
-      class="pop menu"
-      @beforetoggle="placePopover($event, 'above')"
-    >
-      <h4>Sleep timer</h4>
-      <button
-        v-for="[label, v] in SLEEP"
-        :key="label"
-        :class="{
-          on:
-            (v === null && !sleepTimer.mode) ||
-            (v === 'chapter' && sleepTimer.mode === 'chapter') ||
-            (v === sleepMins && sleepTimer.mode === 'time'),
-        }"
-        @click="pickSleep(v)"
-      >
-        {{ label }}
-      </button>
-      <p class="note">Counts only while playing, and fades out over the last few seconds.</p>
-    </div>
-    <div
-      id="lectern-timing"
-      ref="timingPop"
-      popover
-      class="pop"
-      @beforetoggle="placePopover($event, 'above')"
-    >
-      <h4>Highlight timing · {{ timing.label }}</h4>
-      <p>{{ timing.body }}</p>
-      <div v-if="timing.act" class="acts">
-        <button class="btn" @click="runTiming(timing.act.run)">{{ timing.act.label }}</button>
-        <button v-if="timing.act2" class="btn" @click="runTiming(timing.act2.run)">
-          {{ timing.act2.label }}
-        </button>
-      </div>
-    </div>
   </div>
 </template>
 
 <style scoped>
-.errbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-  padding: 8px 14px;
-  background: color-mix(in srgb, var(--err) 11%, var(--surface));
-  border-top: 1px solid color-mix(in srgb, var(--err) 45%, var(--line));
-  color: var(--ink);
-}
-.errbar .code {
-  font: 600 12px var(--mono);
-  color: var(--err);
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-.errbar .msg {
-  flex: 1;
-  min-width: 220px;
-}
-
 .player {
   position: relative;
   background: var(--surface);
@@ -542,7 +324,7 @@ const step = (d: number) => setSpeed(Math.round((settings.speed + d) * 10) / 10)
   color: var(--ink3);
 }
 
-.chip {
+.pl :deep(.chip) {
   height: 26px;
   padding: 0 9px;
   display: inline-flex;
@@ -556,7 +338,7 @@ const step = (d: number) => setSpeed(Math.round((settings.speed + d) * 10) / 10)
   max-width: 260px;
   min-width: 0;
 }
-.chip:hover {
+.pl :deep(.chip:hover) {
   border-color: var(--line2);
   color: var(--ink);
 }
@@ -566,54 +348,6 @@ const step = (d: number) => setSpeed(Math.round((settings.speed + d) * 10) / 10)
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.chip .ring {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  border: 1.5px solid var(--ink3);
-  flex: none;
-}
-.chip.al .ring {
-  background: var(--acc);
-  border-color: var(--acc);
-}
-.chip.sleep.on {
-  color: var(--acc);
-  border-color: color-mix(in srgb, var(--acc) 45%, var(--line));
-}
-.pop.menu {
-  width: 200px;
-  padding: 8px;
-}
-.pop.menu:popover-open {
-  display: grid; /* only while open: a plain display would override the closed popover's none */
-}
-.pop.menu h4 {
-  margin: 4px 8px 6px;
-}
-.pop.menu button {
-  text-align: left;
-  padding: 6px 8px;
-  border-radius: var(--r2);
-  font-size: 13px;
-}
-.pop.menu button:hover {
-  background: var(--hover);
-}
-.pop.menu button.on {
-  color: var(--acc);
-  font-weight: 600;
-}
-.pop.menu .note {
-  margin: 6px 8px 2px;
-  font-size: 11.5px;
-  color: var(--ink3);
-}
-.chip.warn .ring {
-  border-color: var(--warn);
-  background: var(--warn);
-}
-
 .speed {
   display: flex;
   align-items: center;
@@ -638,12 +372,6 @@ const step = (d: number) => setSpeed(Math.round((settings.speed + d) * 10) / 10)
   font-variant-numeric: tabular-nums;
 }
 
-.acts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
 @media (max-width: 820px) {
   .pl {
     gap: 8px;
@@ -659,9 +387,6 @@ const step = (d: number) => setSpeed(Math.round((settings.speed + d) * 10) / 10)
   }
 }
 @media (max-width: 520px) {
-  .chip.timing span {
-    display: none;
-  }
   .speed button {
     display: none;
   }
