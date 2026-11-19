@@ -20,12 +20,14 @@ export interface VoiceSetting {
   model: string;
   voice: string;
 }
-export type Role = "narration" | "dialogue";
+export type Role = "narration" | "dialogue" | "system";
 export type FontKey = "serif" | "literata" | "atkinson" | "sans";
 export interface Settings {
   providers: Provider[];
   narration: VoiceSetting;
   dialogue: VoiceSetting & { same: boolean };
+  /** [bracketed] / fully bold lines, tables, boxes */
+  system: VoiceSetting & { same: boolean };
   stt: { enabled: boolean; providerId: string | null; model: string };
   /** text sent to TTS: replace rules, then automatic emoji/kaomoji removal */
   /** suffix: said after each face/emoji label ("waving emoji") */
@@ -115,6 +117,7 @@ const DEFAULTS: Settings = {
   providers: [],
   narration: { providerId: null, model: "", voice: "" },
   dialogue: { same: true, providerId: null, model: "", voice: "" },
+  system: { same: true, providerId: null, model: "", voice: "" },
   stt: { enabled: true, providerId: null, model: "whisper-1" },
   smartQuotes: true,
   prefetch: 3,
@@ -140,6 +143,7 @@ const stored = useLocalStorage<Settings>("lectern.settings", DEFAULTS, {
     ...s,
     narration: { ...d.narration, ...s.narration },
     dialogue: { ...d.dialogue, ...s.dialogue },
+    system: { ...d.system, ...s.system },
     stt: { ...d.stt, ...s.stt },
     reading: { ...d.reading, ...s.reading },
     speech: { ...d.speech, ...s.speech },
@@ -239,16 +243,22 @@ export function voiceFor(kind: Kind): {
   model: string;
   voice: string;
 } {
-  const role: Role = kind === "dlg" && !settings.dialogue.same ? "dialogue" : "narration";
+  const role: Role =
+    kind === "dlg" && !settings.dialogue.same
+      ? "dialogue"
+      : kind === "sys" && !settings.system.same
+        ? "system"
+        : "narration";
   const v = settings[role];
   return { role, provider: providerById(v.providerId), model: v.model, voice: v.voice };
 }
 
 /** Roles a provider is used for, for the tags in Settings. */
-export function rolesOf(id: string): ("narration" | "dialogue" | "alignment")[] {
-  const r: ("narration" | "dialogue" | "alignment")[] = [];
+export function rolesOf(id: string): (Role | "alignment")[] {
+  const r: (Role | "alignment")[] = [];
   if (settings.narration.providerId === id) r.push("narration");
   if (!settings.dialogue.same && settings.dialogue.providerId === id) r.push("dialogue");
+  if (!settings.system.same && settings.system.providerId === id) r.push("system");
   if (settings.stt.enabled && settings.stt.providerId === id) r.push("alignment");
   return r;
 }
@@ -303,7 +313,7 @@ export function addProvider(preset: PresetKey = "blank"): Provider {
 export function removeProvider(id: string) {
   const i = settings.providers.findIndex((p) => p.id === id);
   if (i >= 0) settings.providers.splice(i, 1);
-  for (const r of [settings.narration, settings.dialogue, settings.stt])
+  for (const r of [settings.narration, settings.dialogue, settings.system, settings.stt])
     if (r.providerId === id) r.providerId = null;
 }
 

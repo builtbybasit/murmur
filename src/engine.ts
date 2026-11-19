@@ -5,6 +5,7 @@ import {
   settings,
   ui,
   library,
+  current,
   currentDoc,
   docOf,
   voiceFor,
@@ -103,6 +104,8 @@ let gen = 0; // bumped on every reset; async work from an older generation is dr
 let wantPlay = false;
 let ended = false;
 let loaded = -1; // segment whose audio is in the element
+let streamed = false; // the element plays /relay/stream/<id>, the full blob may not be here yet
+let streamTimes: Span[] = []; // estimated word times while streaming
 let startWord = 0; // word to start from when the current segment's audio arrives
 let raf = 0;
 const mem = new Map<number, Mem>(); // decoded-ready audio around the playhead
@@ -158,6 +161,12 @@ function el() {
   a.addEventListener("error", () => {
     const i = loaded;
     if (i < 0) return;
+    if (streamed) {
+      // the browser could not play the stream: the downloaded blob takes over from this word
+      startWord = Math.max(0, player.word);
+      stopAudio();
+      return kick();
+    }
     const m = mem.get(i);
     stopAudio();
     if (m) {
@@ -214,6 +223,7 @@ async function durationOf(blob: Blob) {
 
 function stopAudio() {
   loaded = -1;
+  streamed = false;
   if (!audio) return;
   audio.pause();
   audio.removeAttribute("src");
@@ -254,8 +264,8 @@ function update() {
   const i = player.seg;
   const m = mem.get(i);
   const t = loaded === i && audio ? audio.currentTime : 0;
-  if (m && loaded === i) {
-    const ts = timesOf(i, m);
+  const ts = loaded !== i ? null : m ? timesOf(i, m) : streamed ? streamTimes : null;
+  if (ts) {
     let w = 0;
     while (w + 1 < ts.length && ts[w + 1]!.start <= t) w++;
     player.word = ts.length ? w : -1;
@@ -402,11 +412,28 @@ function kick() {
 function startAudio(i: number, m: Mem) {
   const a = el();
   loaded = i;
+  streamed = false;
   a.src = m.url;
   a.defaultPlaybackRate = a.playbackRate = settings.speed; // load() resets playbackRate
   a.preservesPitch = true;
   a.currentTime = timesOf(i, m)[startWord]?.start ?? 0;
   startWord = 0;
+  playEl(a);
+}
+
+/** Play segment i while it is still being generated (see the relay in vite.config.ts). */
+function startStream(i: number, id: string) {
+  const a = el();
+  loaded = i;
+  streamed = true;
+  streamTimes = estimateTimes(segs()[i]!, estDur(i));
+  a.src = "/relay/stream/" + id;
+  a.defaultPlaybackRate = a.playbackRate = settings.speed;
+  a.preservesPitch = true;
+  playEl(a);
+}
+
+function playEl(a: HTMLAudioElement) {
   a.play().catch((e: Error) => {
     if (e.name !== "NotAllowedError") return; // AbortError: src changed under us
     wantPlay = false;
@@ -437,13 +464,21 @@ function fetchSeg(i: number) {
         });
       if (ac.signal.aborted) return;
       player.segState[i] = "loading";
-      const blob = await tts({
+      // the segment is wanted right now and nothing plays: listen while it is generated
+      const streamId =
+        i === player.seg && wantPlay && !startWord && loaded < 0 && !gap
+          ? crypto.randomUUID()
+          : undefined;
+      const pending = tts({
         provider: v.provider,
         model: v.model,
         voice: v.voice,
         input: say,
         signal: ac.signal,
+        streamId,
       });
+      if (streamId) startStream(i, streamId);
+      const blob = await pending;
       const duration = (await durationOf(blob)) ?? say.length / CHARS_PER_SEC;
       e = { blob, duration, bytes: blob.size, stt: null, at: Date.now() };
       cache.putEntry(key, e).catch(noop); // quota errors: still playable from memory
@@ -484,6 +519,7 @@ function remember(i: number, key: string, e: cache.CacheEntry) {
 }
 
 function fail(i: number, err: unknown) {
+  if (i === loaded && streamed) stopAudio(); // its stream will never finish
   const e = toPlain(err);
   const retryable =
     e.code === "rate" || e.code === "network" || (e.code === "http" && e.status >= 500);
@@ -532,11 +568,12 @@ function runRetry(i: number) {
 function go(i: number, w = 0) {
   endGap(false);
   ended = false;
-  if (loaded >= 0 && loaded !== i) stopAudio();
+  const m = mem.get(i);
+  // a stream cannot seek: once the blob is here, play that from the word instead
+  if (loaded >= 0 && (loaded !== i || (streamed && m))) stopAudio();
   player.seg = i;
   player.word = w;
   startWord = w;
-  const m = mem.get(i);
   player.timing = m?.times ? "aligned" : "estimated";
   if (loaded === i && m && audio) {
     audio.currentTime = timesOf(i, m)[w]?.start ?? 0;
@@ -650,7 +687,7 @@ watch(
 // Voice changed: cache keys changed. The segment already playing finishes in the old voice.
 watch(
   () =>
-    (["narr", "dlg"] as const)
+    (["narr", "dlg", "sys"] as const)
       .map((k) => ((v) => [v.provider?.baseUrl, v.model, v.voice].join("|"))(voiceFor(k)))
       .join("#"),
   () => refresh(),
@@ -837,7 +874,7 @@ const previews = new Map<string, string>(); // provider|model|voice -> object UR
 
 /** Speak PREVIEW_TEXT with a role's provider and model; `voice` overrides the role's voice (audition, blends). */
 export async function preview(role: Role, voice?: string) {
-  const v = { ...voiceFor(role === "dialogue" ? "dlg" : "narr") };
+  const v = { ...voiceFor(({ narration: "narr", dialogue: "dlg", system: "sys" } as const)[role]) };
   if (voice) v.voice = voice;
   if (!v.provider)
     throw new ApiError({
@@ -886,4 +923,67 @@ export async function cacheStats(): Promise<{ segments: number; bytes: number }>
 export async function clearCache() {
   await cache.clearAll();
   refresh();
+}
+
+// ---------- lock screen, media keys, headphones (Media Session API) ----------
+
+if ("mediaSession" in navigator) {
+  const ms = navigator.mediaSession;
+  const actions: [MediaSessionAction, MediaSessionActionHandler][] = [
+    ["play", () => play()],
+    ["pause", () => pause()],
+    ["stop", () => pause()],
+    // track buttons (AirPods double tap, F7/F9) move by paragraph, seek buttons by segment
+    ["previoustrack", () => prevPara()],
+    ["nexttrack", () => nextPara()],
+    ["seekbackward", () => prev()],
+    ["seekforward", () => next()],
+    [
+      "seekto",
+      (d) => {
+        // the scrubber is in chapter seconds at the current speed; find that segment
+        let t = (d.seekTime ?? 0) * settings.speed;
+        let i = 0;
+        while (i < segs().length - 1 && t >= estDur(i)) t -= estDur(i++);
+        seek(i, 0, { play: false });
+      },
+    ],
+  ];
+  for (const [a, h] of actions)
+    try {
+      ms.setActionHandler(a, h);
+    } catch {} // an action this browser does not know
+
+  watch(
+    () => [current.value?.title, player.seg, currentDoc.value?.segs.length] as const,
+    ([title, seg, n]) => {
+      ms.metadata = title
+        ? new MediaMetadata({
+            title,
+            artist: n ? `Segment ${seg + 1} of ${n}` : "",
+            album: "lectern",
+          })
+        : null;
+    },
+  );
+  watch(
+    () => [player.status, player.seg, player.total, settings.speed] as const,
+    ([status]) => {
+      ms.playbackState =
+        status === "playing" || status === "buffering"
+          ? "playing"
+          : status === "idle"
+            ? "none"
+            : "paused";
+      const duration = player.total / settings.speed;
+      if (!duration) return;
+      try {
+        ms.setPositionState({
+          duration,
+          position: Math.min(duration, player.elapsed / settings.speed),
+          playbackRate: settings.speed,
+        });
+      } catch {}
+    },
+  );
 }

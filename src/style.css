@@ -26,6 +26,7 @@
   --acc: #7da5ff;
   --on-acc: #0a1222;
   --dlg: #58d0be;
+  --sys: #c4a2ff;
   --warn: #e2b25e;
   --err: #f27981;
   --ok: #62cf98;
@@ -47,6 +48,7 @@
   --acc: #2d5bdb;
   --on-acc: #ffffff;
   --dlg: #0a7d70;
+  --sys: #7446c9;
   --warn: #9a6207;
   --err: #c5303c;
   --ok: #1c8551;
@@ -185,6 +187,9 @@ svg {
 }
 .dot.dlg {
   background: var(--dlg);
+}
+.dot.sys {
+  background: var(--sys);
 }
 
 @media (prefers-reduced-motion: reduce) {

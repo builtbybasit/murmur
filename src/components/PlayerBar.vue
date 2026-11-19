@@ -311,7 +311,7 @@ const step = (d: number) => setSpeed(Math.round((settings.speed + d) * 10) / 10)
             @click="openSettings('voices')"
           >
             <i class="dot" :class="kind" /><span>{{
-              kind === "dlg" ? "Dialogue" : "Narration"
+              { narr: "Narration", dlg: "Dialogue", sys: "System" }[kind]
             }}</span>
             <b>{{ voice.voice || "no voice set" }}</b>
           </button>

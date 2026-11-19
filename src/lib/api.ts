@@ -72,6 +72,7 @@ async function call(
     json?: unknown;
     signal?: AbortSignal;
     accept?: string;
+    streamId?: string;
   } = {},
 ): Promise<Response> {
   const headers: Record<string, string> = {
@@ -79,6 +80,7 @@ async function call(
   };
   if (p.apiKey) headers.authorization = "Bearer " + p.apiKey.trim();
   if (init.accept) headers.accept = init.accept;
+  if (init.streamId) headers["x-stream-id"] = init.streamId;
   let body = init.body;
   if (init.json !== undefined) {
     headers["content-type"] = "application/json";
@@ -110,32 +112,62 @@ const toError = (e: unknown): ProviderError =>
     ? e.plain()
     : { code: "network", status: 0, message: String((e as Error)?.message ?? e), retryAfter: null };
 
-const noMp3 = new Set<string>(); // base URLs that rejected response_format: mp3
+// Optional request fields, most wanted first. A server that rejects one with a 4xx gets the next;
+// the first that works is remembered per base URL. (nano-edge: no mp3, but streams on request;
+// OpenAI: mp3, streams anyway, no `stream` field.)
+const EXTRAS = [
+  { response_format: "mp3", stream: true },
+  { response_format: "mp3" },
+  { stream: true },
+  {},
+];
+const accepted = new Map<string, number>();
 
-/** POST /audio/speech -> audio Blob. Asks for mp3; on a 4xx retries once letting the server pick, and remembers. */
+/** A streamed WAV says "size unknown" (0xFFFFFFFF); fill in the real sizes so decoders and STT accept it. */
+async function fixWav(blob: Blob): Promise<Blob> {
+  const b = new Uint8Array(await blob.arrayBuffer());
+  const v = new DataView(b.buffer);
+  const tag = (o: number) => String.fromCharCode(...b.subarray(o, o + 4));
+  if (b.length < 44 || tag(0) !== "RIFF" || v.getUint32(4, true) !== 0xffffffff) return blob;
+  v.setUint32(4, b.length - 8, true);
+  for (let o = 12; o + 8 <= b.length; o += 8 + v.getUint32(o + 4, true))
+    if (tag(o) === "data") {
+      v.setUint32(o + 4, b.length - o - 8, true);
+      break;
+    }
+  return new Blob([b], { type: blob.type || "audio/wav" });
+}
+
+/**
+ * POST /audio/speech -> audio Blob.
+ * `streamId`: the relay also plays the audio at /relay/stream/<id> while it is being generated.
+ */
 export async function tts(o: {
   provider: Provider;
   model: string;
   voice: string;
   input: string;
   signal?: AbortSignal;
+  streamId?: string;
 }): Promise<Blob> {
-  const json = { model: o.model, voice: o.voice, input: o.input, response_format: "mp3" };
-  const { response_format: _, ...rest } = json;
-  const plain = () =>
-    call(o.provider, "/audio/speech", { json: rest, signal: o.signal, accept: "audio/*" });
+  const base = { model: o.model, voice: o.voice, input: o.input };
+  let i = accepted.get(o.provider.baseUrl) ?? 0;
   let r: Response;
-  if (noMp3.has(o.provider.baseUrl)) r = await plain();
-  else
+  for (;;)
     try {
-      r = await call(o.provider, "/audio/speech", { json, signal: o.signal, accept: "audio/*" });
+      r = await call(o.provider, "/audio/speech", {
+        json: { ...base, ...EXTRAS[i] },
+        signal: o.signal,
+        accept: "audio/*",
+        streamId: o.streamId,
+      });
+      accepted.set(o.provider.baseUrl, i);
+      break;
     } catch (e) {
-      if (!(e instanceof ApiError && e.code === "http" && e.status >= 400 && e.status < 500))
-        throw e;
-      r = await plain();
-      noMp3.add(o.provider.baseUrl);
+      const bad = e instanceof ApiError && e.code === "http" && e.status >= 400 && e.status < 500;
+      if (!bad || ++i >= EXTRAS.length) throw e;
     }
-  const blob = await r.blob();
+  const blob = await fixWav(await r.blob());
   if (!blob.size)
     throw new ApiError({
       code: "http",

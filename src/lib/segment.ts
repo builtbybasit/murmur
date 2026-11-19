@@ -2,7 +2,7 @@
 import { markdownLines, plainTitle, type Block, type Span } from "./markdown";
 export type { Block };
 
-export type Kind = "narr" | "dlg";
+export type Kind = "narr" | "dlg" | "sys";
 export interface Word {
   t: string;
   c: number;
@@ -112,10 +112,11 @@ export function buildDoc(body: string, smart = true): Doc {
     words += ws.length;
     chars += core.length;
   };
-  const para = ({ text: p, marks }: Span) => {
+  const para = ({ text: p, marks }: Span, sys: boolean) => {
     const idx: number[] = [];
     let off = 0;
-    for (const { kind, text } of segmentPara(p, smart)) {
+    // a system message is one segment: quotes inside it (Player 'Adam') are not dialogue
+    for (const { kind, text } of sys ? [{ kind: "sys" as Kind, text: p }] : segmentPara(p, smart)) {
       const core = text.trim();
       const at = off + text.length - text.trimStart().length;
       const ws: Word[] = [];
@@ -129,7 +130,7 @@ export function buildDoc(body: string, smart = true): Doc {
     }
     return idx;
   };
-  // a table row is one narration segment: "Strength, 12", words keep their cell
+  // a table row is one system segment: "Strength, 12", words keep their cell
   const row = (cells: Span[]) => {
     let core = "";
     const ws: Word[] = [];
@@ -146,7 +147,7 @@ export function buildDoc(body: string, smart = true): Doc {
       core += t;
     });
     const idx: number[] = [];
-    push("narr", core, core, ws, idx);
+    push("sys", core, core, ws, idx);
     return idx;
   };
 
@@ -155,13 +156,19 @@ export function buildDoc(body: string, smart = true): Doc {
     else {
       const s = parts[0]!;
       const lead = s.text.length - s.text.trimStart().length;
-      paras.push(
-        para({ text: s.text.trim(), marks: s.marks.slice(lead, lead + s.text.trim().length) }),
-      );
+      const p = { text: s.text.trim(), marks: s.marks.slice(lead, lead + s.text.trim().length) };
+      paras.push(para(p, !!block.quote || isSystem(p)));
     }
     blocks.push(block);
   }
   return { paras, blocks, segs, words, chars };
+}
+
+/** "[You gained a level.]" or a line in bold: a LitRPG system message. */
+export function isSystem({ text, marks }: Span): boolean {
+  if (/^\[[\s\S]*\][.!?…]*$/.test(text)) return true;
+  const starts = [...text.matchAll(/\S+/g)].map((m) => m.index!);
+  return !!starts.length && starts.every((i) => /\bb\b/.test(marks[i] ?? ""));
 }
 
 /** Normalise pasted text: line endings, trailing spaces, 3+ newlines. */

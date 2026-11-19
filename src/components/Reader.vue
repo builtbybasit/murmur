@@ -512,6 +512,9 @@ function onClick(e: MouseEvent) {
 .text :deep(.seg.dlg) {
   --k: var(--dlg);
 }
+.text :deep(.seg.sys) {
+  --k: var(--sys);
+}
 .tint .text :deep(.seg.dlg) {
   color: color-mix(in oklab, var(--ink) 62%, var(--dlg));
 }

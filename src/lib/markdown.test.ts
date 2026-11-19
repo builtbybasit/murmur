@@ -56,6 +56,22 @@ assert.deepEqual(
 );
 assert.equal(cd.segs[0]!.words[0]!.m, "b");
 
+// system messages: [bracketed] or fully bold lines, table rows, boxes; quotes inside stay put
+const sys = buildDoc(
+  `[Salutations, Player ‘Adam Fischer’.]\n**Classes Available**\n“Hi,” he said. **Bold** start.\n> boxed\n\n| a | b |\n| --- | --- |`,
+);
+assert.deepEqual(
+  sys.segs.map((s) => s.kind[0] + ":" + s.core),
+  [
+    "s:[Salutations, Player ‘Adam Fischer’.]",
+    "s:Classes Available",
+    "d:“Hi,”",
+    "n:he said. Bold start.",
+    "s:boxed",
+    "s:a, b",
+  ],
+);
+
 // plain text is Markdown too: every line a paragraph
 assert.equal(buildDoc("One.\nTwo *sighs*.\n\nThree.").paras.length, 3);
 console.log("markdown ok");

@@ -36,8 +36,20 @@ const ADD: [PresetKey, string][] = [
 const ROLES = [
   { key: "narration", dot: "narr", label: "Narration" },
   { key: "dialogue", dot: "dlg", label: "Dialogue" },
+  { key: "system", dot: "sys", label: "System messages" },
 ] as const;
-const TAG: Record<string, string> = { narration: "narr", dialogue: "dlg", alignment: "" };
+const TAG: Record<string, string> = {
+  narration: "narr",
+  dialogue: "dlg",
+  system: "sys",
+  alignment: "",
+};
+const SAME_HINT = {
+  dialogue:
+    "Quoted speech is read by the narration voice. It is still split into its own segments, so switching to a separate voice later needs no re-import.",
+  system:
+    "Lines in [brackets], fully bold lines, tables and boxes are read by the narration voice. Quotes inside them never switch to the dialogue voice.",
+};
 
 type Msg = { cls: "" | "ok" | "bad"; text: string };
 const msg = reactive<Record<string, Msg>>({}); // per provider id or role: inline result line
@@ -120,8 +132,8 @@ function onProvider(role: Role) {
   const p = providerById(v.providerId);
   if (p) Object.assign(v, { model: p.models[0] ?? v.model, voice: p.voices[0] ?? "" });
 }
-function setSame(same: boolean) {
-  const d = settings.dialogue;
+function setSame(role: "dialogue" | "system", same: boolean) {
+  const d = settings[role];
   d.same = same;
   if (!same && !d.providerId)
     Object.assign(d, {
@@ -290,36 +302,35 @@ async function clear() {
       <template v-else-if="ui.settingsTab === 'voices'">
         <h2>Voices</h2>
         <p class="hint">
-          Every segment is one request. Narration and dialogue can use different providers, models
-          and voices.
+          Every segment is one request. Narration, dialogue and system messages can use different
+          providers, models and voices.
         </p>
         <div v-for="r in ROLES" :key="r.key" class="box" :class="r.dot">
           <h3>
             <i class="dot" :class="r.dot" />{{ r.label }}
-            <template v-if="r.key === 'dialogue'">
+            <template v-if="r.key !== 'narration'">
               <span class="sp" />
               <span class="segc">
                 <button
-                  :class="{ on: settings.dialogue.same }"
-                  :aria-pressed="settings.dialogue.same"
-                  @click="setSame(true)"
+                  :class="{ on: settings[r.key].same }"
+                  :aria-pressed="settings[r.key].same"
+                  @click="setSame(r.key, true)"
                 >
                   Same as narration
                 </button>
                 <button
-                  :class="{ on: !settings.dialogue.same }"
-                  :aria-pressed="!settings.dialogue.same"
-                  @click="setSame(false)"
+                  :class="{ on: !settings[r.key].same }"
+                  :aria-pressed="!settings[r.key].same"
+                  @click="setSame(r.key, false)"
                 >
                   Separate voice
                 </button>
               </span>
             </template>
           </h3>
-          <small v-if="r.key === 'dialogue' && settings.dialogue.same" class="h"
-            >Quoted speech is read by the narration voice. It is still split into its own segments,
-            so switching to a separate voice later needs no re-import.</small
-          >
+          <small v-if="r.key !== 'narration' && settings[r.key].same" class="h">{{
+            SAME_HINT[r.key]
+          }}</small>
           <template v-else>
             <div class="f">
               <label
@@ -733,6 +744,10 @@ select:disabled,
   border-color: color-mix(in srgb, var(--dlg) 50%, transparent);
   color: var(--dlg);
 }
+.tag.sys {
+  border-color: color-mix(in srgb, var(--sys) 50%, transparent);
+  color: var(--sys);
+}
 .prov-b {
   padding: 12px;
   border-top: 1px solid var(--line);
@@ -765,6 +780,9 @@ select:disabled,
 }
 .box.dlg {
   --c: var(--dlg);
+}
+.box.sys {
+  --c: var(--sys);
 }
 .box h3 {
   margin: 0 0 10px;
