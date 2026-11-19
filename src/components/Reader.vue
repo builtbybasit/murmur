@@ -4,7 +4,7 @@
 import { computed, ref, watch, onMounted } from "vue";
 import { useEventListener, useMediaQuery } from "@vueuse/core";
 import { settings, device } from "@/settings";
-import { current, currentDoc, library, CHARS_PER_SEC } from "@/library";
+import { current, currentDoc, hasBody, library, CHARS_PER_SEC } from "@/library";
 import { MOD, minutes } from "@/lib/format";
 import { ui } from "@/ui";
 import { docHtml } from "@/lib/render";
@@ -231,7 +231,7 @@ function onClick(e: MouseEvent) {
             {{ player.cachedCount ? "generate the rest" : "generate all" }}
           </button>
         </div>
-        <ChapterEditor v-if="editing" :chapter="current" />
+        <ChapterEditor v-if="editing && hasBody(current)" :chapter="current" />
         <!-- v-show, not v-if: paint() keeps references into this element -->
         <div v-show="!editing" ref="textEl" class="chapter" @click="onClick" v-html="html" />
         <template v-if="!editing">
@@ -252,6 +252,10 @@ function onClick(e: MouseEvent) {
             <kbd>{{ MOD }}V</kbd>
           </div>
         </template>
+      </article>
+      <article v-else-if="current" class="page">
+        <h1>{{ current.title }}</h1>
+        <div class="meta"><span class="loading">Loading chapter…</span></div>
       </article>
     </section>
     <button
@@ -300,6 +304,14 @@ function onClick(e: MouseEvent) {
   flex-wrap: wrap;
   gap: 4px 10px;
   align-items: center;
+}
+.loading {
+  animation: breathe 1.2s ease-in-out infinite alternate;
+}
+@keyframes breathe {
+  to {
+    opacity: 0.4;
+  }
 }
 .meta b {
   font-weight: 500;

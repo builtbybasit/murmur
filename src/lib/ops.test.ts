@@ -1,5 +1,5 @@
 // bun src/lib/ops.test.ts
-import { applyOp, type Chapter, type Library } from "./ops";
+import { applyOp, textStats, type Chapter, type Library } from "./ops";
 
 const ch = (id: string): Chapter => ({ id, title: id, body: id, addedAt: 0 });
 const lib = (...ids: string[]): Library => ({
@@ -42,5 +42,13 @@ eq(l.chapters[1]!.book, "C");
 applyOp(l, { op: "set", ids: ["b"], book: null, title: "t" });
 eq(l.chapters[1]!.book, undefined);
 eq(l.chapters[1]!.title, "t");
+
+// textStats: what is read aloud, and a hash that tells texts apart
+const t = textStats("**Hi** there,\n\n# Big   news");
+eq(t.words, 4);
+eq(t.chars, "Hi there, Big news".length);
+eq(textStats("same text").h, textStats("same text").h);
+if (textStats("same text").h === textStats("same test").h) throw new Error("hash collision");
+eq(textStats("").words, 0);
 
 console.log("ops ok");

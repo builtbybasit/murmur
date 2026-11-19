@@ -2,7 +2,7 @@
 // up what other devices changed when you come back to this one. Library changes are sent as
 // they happen (library.ts); the engine follows another device's chapter and position itself.
 import { useEventListener, watchDebounced } from "@vueuse/core";
-import { flush, replaceLibrary } from "./library";
+import { flush, loadAllBodies, replaceLibrary } from "./library";
 import { getJson, sendJson, sync } from "./lib/server";
 import type { Library } from "./lib/ops";
 import { loadSettings, settings, type Settings } from "./settings";
@@ -33,6 +33,7 @@ async function pull() {
     getJson<Partial<Settings> | null>("settings"),
   ]);
   replaceLibrary(lib);
+  void loadAllBodies(); // the list is enough to start; the texts follow in the background
   if (now() === saved) {
     loadSettings(s); // unsaved edits here win; they are sent next
     saved = now();

@@ -17,7 +17,8 @@ const kind = computed(() => seg.value?.kind ?? "narr");
 const voice = computed(() => voiceFor(kind.value));
 
 const phase = computed(() => {
-  if (!current.value || !doc.value) return "empty";
+  if (!current.value) return "empty";
+  if (!doc.value) return "loading"; // its text is on its way
   if (!hasTts.value) return "noprov";
   if (player.error) return "error";
   if (player.status === "buffering") return "buffering";
@@ -33,6 +34,8 @@ const status = computed(() => {
   switch (phase.value) {
     case "empty":
       return { t: "No chapter yet", s: `Paste one with ${MOD}V` };
+    case "loading":
+      return { t: "Loading chapter…", s: current.value!.title };
     case "noprov":
       return { t: "No TTS provider", s: "Reading works. Listening needs one.", link: true };
     case "buffering": {

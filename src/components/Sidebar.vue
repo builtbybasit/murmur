@@ -6,6 +6,8 @@ import { settings, device } from "@/settings";
 import {
   library,
   docOf,
+  statsOf,
+  hasBody,
   isShort,
   CHARS_PER_SEC,
   renameChapter,
@@ -31,14 +33,16 @@ const list = ref<HTMLElement>();
 const meta = computed(() => {
   const n = library.chapters.length;
   return n
-    ? `${n} · ${thousands(library.chapters.reduce((s, c) => s + docOf(c).words, 0))} words`
+    ? `${n} · ${thousands(library.chapters.reduce((s, c) => s + statsOf(c).words, 0))} words`
     : "none yet";
 });
-const secs = (c: Chapter) => docOf(c).chars / CHARS_PER_SEC;
+const secs = (c: Chapter) => statsOf(c).chars / CHARS_PER_SEC;
 const mins = (c: Chapter) => minutes(secs(c), settings.speed);
 const pct = (c: Chapter) => {
+  const at = library.positions[c.id];
+  if (!at || !hasBody(c)) return 0; // most chapters: no need to segment them
   const n = docOf(c).segs.length;
-  return n ? Math.min(100, Math.round((100 * (library.positions[c.id] ?? 0)) / n)) : 0;
+  return n ? Math.min(100, Math.round((100 * at) / n)) : 0;
 };
 
 const rowEl = (id: string) => list.value?.querySelector<HTMLElement>(`[data-id="${id}"]`);
@@ -340,7 +344,7 @@ function onRowKey(e: KeyboardEvent, c: Chapter, i: number) {
           :data-id="it.c.id"
           tabindex="0"
           :draggable="ui.renamingId !== it.c.id"
-          :title="`${it.c.title} · ${docOf(it.c).words.toLocaleString()} words`"
+          :title="`${it.c.title} · ${statsOf(it.c).words.toLocaleString()} words`"
           @click="onRowClick($event, it.c)"
           @keydown="onRowKey($event, it.c, it.i)"
           @dragstart="onDragStart($event, it.c.id)"

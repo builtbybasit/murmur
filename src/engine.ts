@@ -3,7 +3,15 @@
 // CONTRACT: UI components only read `player` and call the exported functions below.
 import { computed, reactive, watch } from "vue";
 import { settings, voiceFor, hasTts, type Provider } from "./settings";
-import { library, currentDoc, docOf, setPosition, CHARS_PER_SEC } from "./library";
+import {
+  library,
+  currentDoc,
+  docOf,
+  hasBody,
+  loadBodies,
+  setPosition,
+  CHARS_PER_SEC,
+} from "./library";
 import { ui, toast } from "./ui";
 import { MOD } from "./lib/format";
 import type { Doc } from "./lib/segment";
@@ -297,7 +305,7 @@ function load(
   resetWork();
   chId = id;
   const c = library.chapters.find((c) => c.id === id);
-  doc = c ? docOf(c) : null;
+  doc = hasBody(c) ? docOf(c) : null;
   const n = segs().length;
   Object.assign(player, {
     started: !!o.keepStarted && player.started,
@@ -383,6 +391,8 @@ async function prefetchNext() {
   const ac = new AbortController();
   ahead = { id: c.id, ac };
   try {
+    await loadBodies([c.id]);
+    if (!hasBody(c) || ac.signal.aborted) return;
     for (const seg of docOf(c).segs.slice(0, Math.max(1, settings.prefetch)))
       await getAudio(seg, ac.signal);
   } catch {} // stopped or failing: the chapter fetches (and reports) it itself when it opens
@@ -604,6 +614,12 @@ const takeOpening = (id: string | null) => {
 watch(
   [() => ui.currentId, currentDoc],
   ([id, d]) => {
+    // its text is still on its way: stop this one, open it when the text arrives (this runs again)
+    if (id && !d && library.chapters.some((c) => c.id === id)) {
+      if (id !== chId) pause();
+      void loadBodies([id]);
+      return;
+    }
     if (id !== chId) load(id, takeOpening(id));
     else if (d !== doc) load(id, { seg: player.seg, autoplay: wantPlay, keepStarted: true });
   },

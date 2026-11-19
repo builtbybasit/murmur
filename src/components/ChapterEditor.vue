@@ -1,11 +1,11 @@
 <script setup lang="ts">
 // Editing a chapter's text in place of the reading view. Esc cancels, ⌘/Ctrl+Enter saves.
 import { onMounted, ref } from "vue";
-import { setChapterBody, type Chapter } from "@/library";
+import { setChapterBody, type Loaded } from "@/library";
 import { MOD } from "@/lib/format";
 import { ui, toast } from "@/ui";
 
-const props = defineProps<{ chapter: Chapter }>();
+const props = defineProps<{ chapter: Loaded }>();
 const draft = ref(props.chapter.body);
 const editor = ref<HTMLTextAreaElement>();
 onMounted(() => {

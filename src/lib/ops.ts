@@ -5,8 +5,13 @@
 export interface Chapter {
   id: string;
   title: string;
-  body: string;
+  /** the text; in the browser it arrives after the list (see loadBodies in library.ts) */
+  body?: string;
   addedAt: number;
+  /** from the server's list (textStats of the body), so the list needs no text */
+  words?: number;
+  chars?: number;
+  h?: string;
   /** book it belongs to (EPUB title, or a group you dragged it into); none = a loose chapter */
   book?: string;
 }
@@ -75,4 +80,27 @@ export function applyOp(lib: Library, o: Op): void {
       lib.currentId = o.id;
       return;
   }
+}
+
+const SPACE = new Set([9, 10, 13, 32]);
+const MARK = new Set([42, 95, 35, 62, 124, 96]); // * _ # > | ` markdown, not read aloud
+/** Words and characters as read aloud (within a few percent of buildDoc's counts, without its
+ * cost), and a hash that tells whether two bodies are the same text. One pass. */
+export function textStats(body: string): { words: number; chars: number; h: string } {
+  let words = 0;
+  let chars = 0;
+  let inWord = false;
+  let h = 0x811c9dc5; // FNV-1a
+  for (let i = 0; i < body.length; i++) {
+    const c = body.charCodeAt(i);
+    h = Math.imul(h ^ c, 16777619);
+    if (SPACE.has(c)) inWord = false;
+    else if (!MARK.has(c)) {
+      if (!inWord) words++;
+      inWord = true;
+      chars++;
+    }
+  }
+  // ponytail: image markdown counts as text; rare enough not to matter
+  return { words, chars: chars + Math.max(0, words - 1), h: (h >>> 0).toString(36) + body.length };
 }

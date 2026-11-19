@@ -2,7 +2,7 @@
 import { reactive, watch } from "vue";
 import { useLocalStorage } from "@vueuse/core";
 import { settings } from "./settings";
-import { library, docOf, type Chapter } from "./library";
+import { library, docOf, hasBody, loadBodies, loadAllBodies, type Chapter } from "./library";
 import { player, rescan } from "./engine";
 import { align, audioSig, getAudio, keyOf, retrying, spoken, sttProvider } from "./synth";
 import { toError } from "./lib/api";
@@ -86,6 +86,8 @@ async function genLoop() {
     running = { id, ac };
     j.state = "running";
     try {
+      await loadBodies([id]);
+      if (!hasBody(c)) throw new Error("Couldn't load the chapter text");
       await genChapter(docOf(c), j, ac.signal);
       delete generating[id];
       readyMarks.value[id] = audioSig.value;
@@ -164,6 +166,7 @@ export async function storageByBook(): Promise<{
   books: BookStorage[];
   other: { segments: number; bytes: number; keys: string[] };
 }> {
+  await loadAllBodies(); // every chapter's segments are needed
   const size = new Map(await cache.sizes());
   const byBook = new Map<string, BookStorage>();
   const used = new Set<string>();
@@ -173,6 +176,7 @@ export async function storageByBook(): Promise<{
     if (!b)
       byBook.set(book, (b = { book, chapters: 0, segments: 0, cached: 0, bytes: 0, keys: [] }));
     b.chapters++;
+    if (!hasBody(c)) continue;
     for (const seg of docOf(c).segs) {
       if (!spoken(seg)) continue;
       const k = keyOf(seg);

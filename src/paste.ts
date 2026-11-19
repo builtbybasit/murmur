@@ -1,5 +1,5 @@
 // Adding chapters from the clipboard, with their toasts.
-import { addChapter, docOf, isShort, undo } from "./library";
+import { addChapter, docOf, isShort, undo, type Loaded } from "./library";
 import { toast, ui } from "./ui";
 import { htmlToMarkdown } from "./lib/markdown";
 import { MOD } from "./lib/format";
@@ -11,7 +11,7 @@ export function addFromText(text: string | null | undefined, html?: string | nul
     return toast({ title: "Nothing to add", sub: "The clipboard is empty" });
   if (r.status === "dup") return toast({ title: "Already in the list", sub: r.chapter!.title });
   const ch = r.chapter!;
-  const d = docOf(ch);
+  const d = docOf(ch as Loaded); // just added: its text is here
   const short = isShort(ch);
   toast({
     title: `Added "${ch.title}"`,

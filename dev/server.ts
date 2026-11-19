@@ -8,6 +8,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { randomBytes } from "node:crypto";
+import { gzipSync } from "node:zlib";
 import {
   existsSync,
   mkdirSync,
@@ -26,7 +27,7 @@ import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import type { Connect, Plugin } from "vite-plus";
 import { renderUnicodeCompact } from "uqr";
 import { openPhoneDoor, VIA } from "./phone-door";
-import { applyOp, type Chapter, type Library, type Op } from "../src/lib/ops";
+import { applyOp, textStats, type Chapter, type Library, type Op } from "../src/lib/ops";
 
 // .env (see .env.example): vp dev runs under Node, which does not load it by itself.
 // Variables already set in the shell win.
@@ -69,7 +70,13 @@ const send = (res: ServerResponse, status: number, body?: unknown) => {
   if (body === undefined) return void res.end();
   res.setHeader("content-type", "application/json");
   res.setHeader("cache-control", "no-store");
-  res.end(JSON.stringify(body));
+  const json = JSON.stringify(body);
+  // the library is megabytes of text: gzip makes it a fraction of that over Wi-Fi
+  if (json.length > 1024 && /\bgzip\b/.test(String(res.req.headers["accept-encoding"]))) {
+    res.setHeader("content-encoding", "gzip");
+    return void res.end(gzipSync(json, { level: 1 }));
+  }
+  res.end(json);
 };
 
 // ---------- access ----------
@@ -210,7 +217,7 @@ function unusedImages() {
   const ids = existsSync(dir) ? readdirSync(dir).filter((f) => !f.includes(".")) : [];
   const used = new Set(
     loadLib().chapters.flatMap((c) =>
-      [...c.body.matchAll(/\(img:([0-9a-f]+)\)/g)].map((m) => m[1]!),
+      [...(c.body ?? "").matchAll(/\(img:([0-9a-f]+)\)/g)].map((m) => m[1]!),
     ),
   );
   const unused = ids.filter((id) => !used.has(id));
@@ -224,15 +231,37 @@ function unusedImages() {
 // ---------- /api ----------
 
 const ID = /^[\w-]{1,80}$/;
+// ponytail: texts of deleted chapters stay in memory until restart, for Undo
+const deletedBodies = new Map<string, string | undefined>();
 
 async function api(req: IncomingMessage, res: ServerResponse) {
   const [, kind, id] = (req.url ?? "").split("?")[0]!.split("/");
   const m = req.method ?? "GET";
   try {
-    if (kind === "library" && m === "GET") return send(res, 200, loadLib());
+    // the list without the texts (they are most of the size), then the texts in batches
+    if (kind === "library" && m === "GET") {
+      const l = loadLib();
+      const chapters = l.chapters.map(({ body = "", ...c }) => ({ ...c, ...textStats(body) }));
+      return send(res, 200, { ...l, chapters });
+    }
+    if (kind === "bodies" && m === "GET") {
+      const ids = new Set(new URL(req.url ?? "", "http://x").searchParams.get("ids")?.split(","));
+      const out: Record<string, string> = {};
+      for (const c of loadLib().chapters) if (ids.has(c.id)) out[c.id] = c.body ?? "";
+      return send(res, 200, out);
+    }
     if (kind === "library" && m === "POST") {
       const o = JSON.parse(String(await readBody(req))) as Op;
-      applyOp(loadLib(), o);
+      const lib = loadLib();
+      // a browser may not have a chapter's text yet: Undo of a delete gets it back from here
+      if (o.op === "delete")
+        for (const c of lib.chapters) if (o.ids.includes(c.id)) deletedBodies.set(c.id, c.body);
+      if (o.op === "add")
+        o.chapters = o.chapters.map(({ words: _w, chars: _c, h: _h, ...c }) => ({
+          ...c,
+          body: c.body ?? deletedBodies.get(c.id) ?? "",
+        }));
+      applyOp(lib, o);
       saveLib(o.op !== "pos");
       return send(res, 204);
     }
