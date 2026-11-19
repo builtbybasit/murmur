@@ -77,15 +77,19 @@ function cleanToken(t: string): string {
 
 /** Remove emoji and kaomoji; leaves words, numbers and normal punctuation alone. */
 export function stripFaces(text: string): string {
-  return text
+  const out = text
     .replace(EMOJI, "")
     .replace(FACE_GROUP, (g) => (WORD_RUN.test(g) || !DECOR.test(g) ? g : " "))
     .replace(/\S+/g, cleanToken)
-    .replace(/[(（[]\s*[)）\]]/g, "") // brackets emptied by the steps above
+    .replace(/[(（[]\s*[)）\]]/g, ""); // brackets emptied by the steps above
+  return tidy(out);
+}
+
+const tidy = (t: string) =>
+  t
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\s+([,.!?;:…])/g, "$1")
     .trim();
-}
 
 /** Build the request-text function for a settings snapshot. */
 export function makeSpeaker(o: {
@@ -94,11 +98,6 @@ export function makeSpeaker(o: {
   suffix?: string;
 }): (text: string) => string {
   const rules = compileRules(o.rules, o.suffix);
-  const tidy = (t: string) =>
-    t
-      .replace(/[ \t]{2,}/g, " ")
-      .replace(/\s+([,.!?;:…])/g, "$1")
-      .trim();
   return o.auto ? (t) => stripFaces(rules(t)) : (t) => tidy(rules(t));
 }
 
@@ -117,3 +116,10 @@ export function describeImage(alt: string): string {
     !/^(image|img|picture|pic|figure|fig|illustration|cover|photo|untitled)[\s_-]*\d*$/i.test(a);
   return real ? `Illustration: ${a}.` : "Illustration.";
 }
+
+/** What the TTS is sent for a segment; "" = nothing to say (it plays a short silence). */
+export const spokenText = (
+  seg: { core: string; img?: { alt: string } },
+  say: (text: string) => string,
+  images: boolean,
+) => (seg.img ? (images ? describeImage(seg.img.alt) : "") : say(seg.core));

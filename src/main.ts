@@ -2,6 +2,7 @@ import { createApp } from "vue";
 import "./style.css";
 import App from "./App.vue";
 import { startSync } from "./sync";
+import "./mediaSession";
 
 startSync().then(
   () => createApp(App).mount("#app"),

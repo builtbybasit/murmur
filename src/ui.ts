@@ -1,5 +1,5 @@
 // Transient UI state and the toast. Nothing here is saved.
-import { reactive } from "vue";
+import { reactive, watch } from "vue";
 
 export interface ToastAction {
   label: string;
@@ -29,6 +29,19 @@ export const ui = reactive({
   editingId: null as string | null, // chapter whose text is open in the editor (Reader)
   epubFile: null as File | null, // EPUB being imported (EpubImport dialog)
 });
+
+// another chapter: the reader follows the playhead again
+watch(
+  () => ui.currentId,
+  () => (ui.follow = true),
+);
+
+/** Open a chapter's text in the editor (Reader pauses playback; saving re-segments in place). */
+export function edit(id: string) {
+  ui.currentId = id;
+  ui.view = "reader";
+  ui.editingId = id;
+}
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 export function toast(t: Toast, ms = 6000) {

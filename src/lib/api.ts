@@ -26,12 +26,21 @@ export class ApiError extends Error implements ProviderError {
     this.status = e.status;
     this.retryAfter = e.retryAfter;
   }
-  plain = (): ProviderError => ({
-    code: this.code,
-    status: this.status,
-    message: this.message,
-    retryAfter: this.retryAfter,
-  });
+}
+
+/** Any thrown thing as a ProviderError; an ApiError already is one. */
+export const toError = (e: unknown): ProviderError =>
+  e instanceof ApiError
+    ? e
+    : { code: "network", status: 0, message: String((e as Error)?.message ?? e), retryAfter: null };
+
+export const MAX_RETRIES = 3;
+/** Seconds before automatic retry number n + 1, or null: not worth retrying, or retries used up. */
+export function retryDelay(e: ProviderError, n: number): number | null {
+  if (n >= MAX_RETRIES) return null;
+  if (e.code === "rate") return e.retryAfter ?? [6, 12, 24][n]!;
+  if (e.code === "network" || (e.code === "http" && e.status >= 500)) return [4, 8, 16][n]!;
+  return null;
 }
 
 const isAbort = (e: unknown) => (e as Error)?.name === "AbortError";
@@ -108,11 +117,6 @@ async function call(
   return r;
 }
 
-const toError = (e: unknown): ProviderError =>
-  e instanceof ApiError
-    ? e.plain()
-    : { code: "network", status: 0, message: String((e as Error)?.message ?? e), retryAfter: null };
-
 // Optional request fields, most wanted first. A server that rejects one with a 4xx gets the next;
 // the first that works is remembered per base URL and mode. Audio someone is waiting for wants to
 // stream; audio fetched ahead wants to be small. (nano-edge: no mp3, streams only WAV, FLAC is
@@ -186,13 +190,13 @@ export async function tts(o: {
   return blob;
 }
 
-/** POST /audio/transcriptions (verbose_json, word timestamps) -> { words, text } */
+/** POST /audio/transcriptions (verbose_json) -> word timestamps */
 export async function stt(o: {
   provider: Provider;
   model: string;
   blob: Blob;
   signal?: AbortSignal;
-}): Promise<{ words: SttWord[]; text: string }> {
+}): Promise<SttWord[]> {
   const ext = /wav/.test(o.blob.type)
     ? "wav"
     : /ogg|opus/.test(o.blob.type)
@@ -209,24 +213,25 @@ export async function stt(o: {
     await call(o.provider, "/audio/transcriptions", { body: fd, signal: o.signal })
   ).json();
   // some servers only nest words inside segments
-  const words: SttWord[] =
-    j.words ?? j.segments?.flatMap((s: { words?: SttWord[] }) => s.words ?? []) ?? [];
-  return { words, text: j.text ?? "" };
+  return j.words ?? j.segments?.flatMap((s: { words?: SttWord[] }) => s.words ?? []) ?? [];
 }
+
+/** Strings, or objects with an id or name. */
+const ids = (list: unknown[]) =>
+  list
+    .map((x) =>
+      typeof x === "string"
+        ? x
+        : ((x as { id?: string; name?: string }).id ?? (x as { name?: string }).name ?? ""),
+    )
+    .filter(Boolean);
 
 /** GET /models. */
 export async function testConnection(provider: Provider): Promise<TestResult> {
   const t0 = performance.now();
   try {
     const j = await (await call(provider, "/models")).json();
-    const list: unknown[] = Array.isArray(j) ? j : (j.data ?? j.models ?? []);
-    const models = list
-      .map((m) =>
-        typeof m === "string"
-          ? m
-          : ((m as { id?: string; name?: string }).id ?? (m as { name?: string }).name ?? ""),
-      )
-      .filter(Boolean);
+    const models = ids(Array.isArray(j) ? j : (j.data ?? j.models ?? []));
     return { ok: true, ms: Math.round(performance.now() - t0), models };
   } catch (e) {
     return { ok: false, error: toError(e) };
@@ -243,15 +248,7 @@ export async function fetchVoices(provider: Provider): Promise<VoicesResult> {
         : Promise.reject(e),
     );
     const j = await r.json();
-    const list: unknown[] = Array.isArray(j) ? j : (j.voices ?? j.data ?? []);
-    const voices = list
-      .map((v) =>
-        typeof v === "string"
-          ? v
-          : ((v as { id?: string; name?: string }).id ?? (v as { name?: string }).name ?? ""),
-      )
-      .filter(Boolean);
-    return { ok: true, voices };
+    return { ok: true, voices: ids(Array.isArray(j) ? j : (j.voices ?? j.data ?? [])) };
   } catch (e) {
     const error = toError(e);
     return { ok: false, notFound: error.status === 404 || error.status === 405, error };

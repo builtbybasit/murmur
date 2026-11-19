@@ -11,9 +11,9 @@ import Settings from "./components/Settings.vue";
 import Onboarding from "./components/Onboarding.vue";
 // loaded on first use: epub-ts and jszip stay out of the main bundle
 const EpubImport = defineAsyncComponent(() => import("./components/EpubImport.vue"));
-import { settings, device, FONTS } from "./settings";
+import { settings, device, hasTts, FONTS } from "./settings";
 import { library } from "./library";
-import { ui } from "./ui";
+import { ui, edit } from "./ui";
 import { addFromText, undoWithToast } from "./paste";
 import * as engine from "./engine";
 
@@ -78,11 +78,15 @@ useEventListener(document, "keydown", (e: KeyboardEvent) => {
   switch (k) {
     case " ":
       e.preventDefault();
-      return engine.toggle();
+      if (hasTts.value) return engine.toggle();
+      ui.view = "settings"; // listening needs a provider
+      ui.settingsTab = "providers";
+      return;
     case "ArrowLeft":
     case "ArrowRight":
       if (ui.view !== "reader") return;
       e.preventDefault();
+      ui.follow = true;
       if (e.shiftKey) return fwd ? engine.nextPara() : engine.prevPara();
       return fwd ? engine.next() : engine.prev();
     case "j":
@@ -104,7 +108,7 @@ useEventListener(document, "keydown", (e: KeyboardEvent) => {
       return engine.retry();
     case "e":
     case "E":
-      if (ui.currentId) engine.edit(ui.currentId);
+      if (ui.currentId) edit(ui.currentId);
       return;
     case "b":
     case "B":

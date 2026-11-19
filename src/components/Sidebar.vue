@@ -25,9 +25,10 @@ import {
   setBook,
   type Chapter,
 } from "../library";
-import { ui, toast } from "../ui";
+import { ui, toast, edit } from "../ui";
 import { pasteFromClipboard, undoWithToast } from "../paste";
-import { player, open, edit, generating, genState, toggleGenerate } from "../engine";
+import { player, open } from "../engine";
+import { generating, genState, toggleGenerate } from "../generate";
 
 const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl+";
 const narrow = useMediaQuery("(max-width: 820px)");
@@ -243,13 +244,11 @@ function endRename(id: string, value: string | null) {
 
 function removeChapters(cs: Chapter[]) {
   if (!cs.length) return;
-  const wasCurrent = cs.some((c) => c.id === ui.currentId);
   for (const c of cs) {
     const s = generating[c.id]?.state;
     if (s === "queued" || s === "running") toggleGenerate(c.id); // stop its background job
   }
-  deleteChapters(cs.map((c) => c.id));
-  if (wasCurrent && ui.currentId) open(ui.currentId);
+  deleteChapters(cs.map((c) => c.id)); // moves ui.currentId on; the engine follows
   toast({
     title: cs.length === 1 ? `Deleted “${cs[0]!.title}”` : `Deleted ${cs.length} chapters`,
     sub: "Cached audio is kept until you clear the cache.",

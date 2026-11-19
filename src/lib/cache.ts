@@ -1,13 +1,11 @@
 // Audio cache in IndexedDB: one entry per (provider URL, model, voice, text), with duration and STT words.
-import { createStore, get, getMany, set, del, delMany, entries, values, clear } from "idb-keyval";
+import { createStore, get, getMany, set, del, delMany, entries, clear } from "idb-keyval";
 import type { SttWord } from "./align";
 
 export interface CacheEntry {
   blob: Blob;
   duration: number; // seconds at 1.0x
-  bytes: number;
   stt: SttWord[] | null; // raw STT word timestamps, aligned on load
-  at: number;
 }
 
 const store = createStore("lectern-audio", "segments");
@@ -36,22 +34,8 @@ export const getEntry = (key: string) => get<CacheEntry>(key, store);
 export const getEntries = (keys: string[]) => getMany<CacheEntry | undefined>(keys, store);
 export const putEntry = (key: string, e: CacheEntry) => set(key, e, store);
 export const dropEntry = (key: string) => del(key, store);
-export async function setStt(key: string, stt: SttWord[]) {
-  const e = await getEntry(key);
-  if (e) await putEntry(key, { ...e, stt });
-}
-
-export async function stats() {
-  const all = await values<CacheEntry>(store);
-  return {
-    segments: all.length,
-    bytes: all.reduce((a, e) => a + (e.bytes ?? e.blob?.size ?? 0), 0),
-  };
-}
 export const clearAll = () => clear(store);
 export const dropEntries = (keys: string[]) => delMany(keys, store);
 /** [key, bytes] of every cached segment. */
 export const sizes = async () =>
-  (await entries<string, CacheEntry>(store)).map(
-    ([k, e]) => [k, e.bytes ?? e.blob?.size ?? 0] as const,
-  );
+  (await entries<string, CacheEntry>(store)).map(([k, e]) => [k, e.blob?.size ?? 0] as const);

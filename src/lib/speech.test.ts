@@ -1,6 +1,6 @@
 // Run: bun src/lib/speech.test.ts
 import assert from "node:assert/strict";
-import { compileRules, stripFaces, makeSpeaker, describeImage } from "./speech";
+import { compileRules, stripFaces, makeSpeaker, describeImage, spokenText } from "./speech";
 import { DEFAULT_RULES } from "./kaomoji";
 
 const eq = (a: string, b: string) => assert.equal(stripFaces(a), b, a);
@@ -82,3 +82,13 @@ assert.equal(
   "Illustration: A dragon circling the tower.",
 );
 console.log("illustrations ok");
+
+// what a segment sends to the TTS
+const up = (t: string) => t.toUpperCase();
+assert.equal(spokenText({ core: "hi" }, up, true), "HI");
+assert.equal(
+  spokenText({ core: "", img: { alt: "a cat on a mat" } }, up, true),
+  "Illustration: a cat on a mat.",
+);
+assert.equal(spokenText({ core: "", img: { alt: "x" } }, up, false), "");
+console.log("spoken text ok");

@@ -1,6 +1,7 @@
 // Run: bun src/lib/segment.test.ts
 import assert from "node:assert/strict";
-import { segmentPara, autoTitle, buildDoc } from "./segment";
+import { segmentPara, buildDoc } from "./segment";
+import { autoTitle } from "./markdown";
 
 const kinds = (p: string, smart = true) =>
   segmentPara(p, smart)

@@ -13,16 +13,9 @@ import {
 } from "../settings";
 import { library } from "../library";
 import { ui, toast } from "../ui";
-import {
-  player,
-  preview,
-  cacheStats,
-  clearCache,
-  retry,
-  storageByBook,
-  dropAudio,
-  type BookStorage,
-} from "../engine";
+import { player, retry } from "../engine";
+import { preview } from "../preview";
+import { clearCache, storageByBook, dropAudio, type BookStorage } from "../generate";
 import { unusedImages, removeUnusedImages } from "../lib/images";
 import { sync } from "../lib/server";
 import { saveSettings } from "../sync";
@@ -180,14 +173,22 @@ function setPrefetch(e: Event) {
 }
 
 // ---------- storage ----------
-const stats = ref<{ segments: number; bytes: number } | null>(null);
 const perBook = ref<Awaited<ReturnType<typeof storageByBook>> | null>(null);
 const imgs = ref<Awaited<ReturnType<typeof unusedImages>> | null>(null);
 const loadStats = async () => {
-  stats.value = await cacheStats();
   perBook.value = await storageByBook();
   imgs.value = await unusedImages();
 };
+/** Everything in the audio cache. */
+const stats = computed(() => {
+  const p = perBook.value;
+  if (!p) return null;
+  const sum = (f: (b: BookStorage) => number) => p.books.reduce((n, b) => n + f(b), 0);
+  return {
+    segments: sum((b) => b.cached) + p.other.segments,
+    bytes: sum((b) => b.bytes) + p.other.bytes,
+  };
+});
 async function clearBook(b: BookStorage) {
   await dropAudio(b.keys, b.book);
   await loadStats();

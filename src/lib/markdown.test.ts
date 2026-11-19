@@ -1,7 +1,7 @@
 // Run: bun src/lib/markdown.test.ts
 import assert from "node:assert/strict";
-import { htmlToMarkdown } from "./markdown";
-import { autoTitle, buildDoc } from "./segment";
+import { autoTitle, htmlToMarkdown } from "./markdown";
+import { buildDoc } from "./segment";
 
 // Royal Road title: <br> inside <strong>
 const rr = htmlToMarkdown(

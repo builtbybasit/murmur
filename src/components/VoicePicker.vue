@@ -2,7 +2,7 @@
 // Provider voices as grouped chips. Click = choose and hear it. Filter shows when the list is long.
 import { computed, ref } from "vue";
 import { AudioLines, Blend, Search } from "@lucide/vue";
-import { player, preview, stopPreview } from "../engine";
+import { previewing, preview, stopPreview } from "../preview";
 import { groupVoices } from "../lib/voice";
 import { type Provider, type Role } from "../settings";
 import BlendBuilder from "./BlendBuilder.vue";
@@ -20,7 +20,7 @@ const groups = computed(() => {
 });
 
 async function audition(id: string) {
-  if (player.previewing === id) return stopPreview();
+  if (previewing.value === id) return stopPreview();
   try {
     await preview(props.role, id);
   } catch (e) {
@@ -66,11 +66,11 @@ function useBlend(id: string) {
         <button
           v-for="x in g.ids"
           :key="x"
-          :class="{ on: x === voice, playing: player.previewing === x }"
-          :title="player.previewing === x ? 'Stop' : 'Use and hear this voice'"
+          :class="{ on: x === voice, playing: previewing === x }"
+          :title="previewing === x ? 'Stop' : 'Use and hear this voice'"
           @click="pick(x)"
         >
-          <AudioLines v-if="player.previewing === x" :size="12" class="eq" />{{ x }}
+          <AudioLines v-if="previewing === x" :size="12" class="eq" />{{ x }}
         </button>
       </div>
     </div>

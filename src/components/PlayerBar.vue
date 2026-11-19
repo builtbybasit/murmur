@@ -2,7 +2,7 @@
 import { computed, ref, watch, onBeforeUnmount } from "vue";
 import { Moon, Play, Pause, SkipBack, SkipForward, TriangleAlert } from "@lucide/vue";
 import { settings, voiceFor, providerById, hasTts } from "../settings";
-import { current, currentDoc, library, CHARS_PER_SEC } from "../library";
+import { current, currentDoc, CHARS_PER_SEC } from "../library";
 import { ui } from "../ui";
 import {
   player,
@@ -16,6 +16,7 @@ import {
   setSpeed,
   sleepTimer,
   setSleep,
+  upNext,
 } from "../engine";
 
 const doc = computed(() => currentDoc.value || null);
@@ -36,14 +37,10 @@ const phase = computed(() => {
   if (!hasTts.value) return "noprov";
   if (player.error) return "error";
   if (player.status === "buffering") return "buffering";
-  if (player.status === "ended" && !nextCh.value) return "end";
+  if (player.status === "ended" && !upNext.value) return "end";
   return player.status === "playing" ? "playing" : "paused";
 });
 
-const nextCh = computed(() => {
-  const i = library.chapters.findIndex((c) => c.id === ui.currentId);
-  return i < 0 ? null : (library.chapters[i + 1] ?? null);
-});
 const totalSec = computed(() => player.total || (doc.value ? doc.value.chars / CHARS_PER_SEC : 0));
 const mins = computed(() => Math.max(1, Math.round(totalSec.value / settings.speed / 60)));
 
@@ -173,6 +170,7 @@ function onTrack(e: MouseEvent) {
   if (!nSegs.value) return;
   const x = ((e.clientX - el.getBoundingClientRect().left) / el.clientWidth) * c.at(-1)!;
   const k = c.findIndex((v) => v > x);
+  ui.follow = true;
   seek(k < 0 ? nSegs.value - 1 : Math.max(0, k - 1));
 }
 
@@ -300,7 +298,7 @@ const step = (d: number) => setSpeed(Math.round((settings.speed + d) * 10) / 10)
             title="Previous segment (←)"
             aria-label="Previous segment"
             :disabled="!doc"
-            @click="prev()"
+            @click="((ui.follow = true), prev())"
           >
             <SkipBack :size="16" :stroke-width="1.75" />
           </button>
@@ -309,7 +307,7 @@ const step = (d: number) => setSpeed(Math.round((settings.speed + d) * 10) / 10)
             title="Play / pause (Space)"
             aria-label="Play or pause"
             :disabled="!doc"
-            @click="toggle()"
+            @click="hasTts ? toggle() : openSettings('providers')"
           >
             <i v-if="phase === 'buffering'" class="spin" />
             <Pause
@@ -325,7 +323,7 @@ const step = (d: number) => setSpeed(Math.round((settings.speed + d) * 10) / 10)
             title="Next segment (→)"
             aria-label="Next segment"
             :disabled="!doc"
-            @click="next()"
+            @click="((ui.follow = true), next())"
           >
             <SkipForward :size="16" :stroke-width="1.75" />
           </button>

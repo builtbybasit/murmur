@@ -5,80 +5,15 @@ import { computed, ref, watch, nextTick, onMounted, onBeforeUnmount } from "vue"
 import { settings, device } from "../settings";
 import { current, currentDoc, library, setChapterBody, CHARS_PER_SEC } from "../library";
 import { ui, toast } from "../ui";
-import type { Seg, Word } from "../lib/segment";
-import { player, seek, nextChapter, genState, toggleGenerate } from "../engine";
+import { docHtml } from "../lib/render";
+import { player, seek, pause, nextChapter, upNext } from "../engine";
+import { genState, toggleGenerate } from "../generate";
 
 const scroller = ref<HTMLElement | null>(null);
 const textEl = ref<HTMLElement | null>(null);
 const doc = computed(() => currentDoc.value || null);
 
-const esc = (s: string) =>
-  s.replace(/[&<>]/g, (c) => (c === "&" ? "&amp;" : c === "<" ? "&lt;" : "&gt;"));
-
-const attr = (s: string) => esc(s).replace(/"/g, "&quot;");
-const wordHtml = (w: Word, k: number) =>
-  `<span class="w${w.m ? " " + w.m : ""}" data-w="${k}">${esc(w.t)}</span>`;
-
-/** One segment's words with the text between them; a table row renders one part per cell. */
-function segHtml(s: Seg, cell?: number) {
-  let out = `<span class="seg ${s.kind}" data-s="${s.i}">`;
-  let at = cell === undefined ? 0 : -1; // a cell shows only the text between its own words
-  s.words.forEach((w, k) => {
-    if (cell !== undefined && w.cell !== cell) return;
-    if (at >= 0) out += esc(s.core.slice(at, w.c));
-    out += wordHtml(w, k);
-    at = w.c + w.t.length;
-  });
-  if (cell === undefined) out += esc(s.core.slice(at));
-  return out + "</span>";
-}
-
-const html = computed(() => {
-  const d = doc.value;
-  if (!d) return "";
-  let out = "";
-  let quote = false;
-  let table = 0;
-  d.paras.forEach((idx, pi) => {
-    const b = d.blocks[pi]!;
-    if (table && table !== b.table) {
-      out += "</table>";
-      table = 0;
-    }
-    if (!!b.quote !== quote) {
-      quote = !quote;
-      out += quote ? "<blockquote>" : "</blockquote>";
-    }
-    if (b.rule) out += "<hr>";
-    if (b.tag === "img") {
-      // book images come from the lectern server; web images load directly
-      const s = d.segs[idx[0]!]!;
-      const src = s.img!.src.replace(/^img:/, "/api/images/");
-      out += `<p class="fig"><span class="seg narr" data-s="${s.i}"><img src="${attr(src)}" alt="${attr(s.img!.alt)}" loading="lazy"></span></p>`;
-      return;
-    }
-    if (b.tag === "tr") {
-      if (!table) out += "<table>";
-      table = b.table!;
-      const s = d.segs[idx[0]!]!;
-      const c = b.head ? "th" : "td";
-      out += "<tr>";
-      for (let k = 0; k < b.cells!; k++) out += `<${c}>${segHtml(s, k)}</${c}>`;
-      out += "</tr>";
-      return;
-    }
-    const cls = [b.tag === "h" && "hd", b.tag === "li" && "li", b.center && "ctr"].filter(Boolean);
-    out += `<p${cls.length ? ` class="${cls.join(" ")}"` : ""}${b.n ? ` data-n="${attr(b.n)}"` : ""}>`;
-    for (const si of idx) {
-      const s = d.segs[si]!;
-      out += esc(s.lead) + segHtml(s) + esc(s.trail);
-    }
-    out += "</p>";
-  });
-  if (table) out += "</table>";
-  if (quote) out += "</blockquote>";
-  return out;
-});
+const html = computed(() => (doc.value ? docHtml(doc.value) : ""));
 
 // ---------- editing the chapter text ----------
 const editing = computed(() => !!current.value && ui.editingId === current.value.id);
@@ -86,6 +21,7 @@ const draft = ref("");
 const editor = ref<HTMLTextAreaElement | null>(null);
 watch(editing, async (on) => {
   if (!on) return;
+  pause();
   draft.value = current.value!.body;
   await nextTick();
   scroller.value?.scrollTo({ top: 0 });
@@ -126,10 +62,6 @@ const cached = computed(() => {
   return n === 0 ? "nothing generated yet" : n >= all ? "fully cached" : `${n} of ${all} cached`;
 });
 const job = computed(() => (current.value ? genState(current.value) : null));
-const nextCh = computed(() => {
-  const i = library.chapters.findIndex((c) => c.id === ui.currentId);
-  return i < 0 ? null : (library.chapters[i + 1] ?? null);
-});
 
 // ---------- highlight ----------
 // a segment is one element, or one per table cell; words are listed across its parts
@@ -288,6 +220,7 @@ function onClick(e: MouseEvent) {
   if (!w && !t.closest(".fig")) return; // words and images seek; gaps between words do not
   const s = t.closest<HTMLElement>(".seg");
   if (!s?.dataset.s) return;
+  ui.follow = true;
   seek(+s.dataset.s, w ? +w.dataset.w! : 0);
 }
 </script>
@@ -349,8 +282,8 @@ function onClick(e: MouseEvent) {
         <!-- v-show, not v-if: paint() keeps references into this element -->
         <div v-show="!editing" ref="textEl" class="text" @click="onClick" v-html="html" />
         <template v-if="editing" />
-        <button v-else-if="nextCh" class="endcard" @click="nextChapter()">
-          <span><small>Up next · plays automatically</small><b>{{ nextCh.title }}</b></span>
+        <button v-else-if="upNext" class="endcard" @click="nextChapter()">
+          <span><small>Up next · plays automatically</small><b>{{ upNext.title }}</b></span>
           <span class="sp" />
           <kbd>J</kbd>
         </button>

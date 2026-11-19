@@ -2,8 +2,8 @@
 // (lib/ops.ts) applied here at once and sent to the server in order. Ops that could not be sent
 // stay queued and are applied again on top of whatever the server sends back (see `replaceLibrary`).
 import { computed, reactive } from "vue";
-import { useLocalStorage } from "@vueuse/core";
-import { buildDoc, normalize, autoTitle, type Doc } from "./lib/segment";
+import { buildDoc, type Doc } from "./lib/segment";
+import { normalize, autoTitle } from "./lib/markdown";
 import { applyOp, type Chapter, type Library, type Op } from "./lib/ops";
 import { sendJson, sync } from "./lib/server";
 import { settings } from "./settings";
@@ -12,9 +12,6 @@ import { ui } from "./ui";
 export type { Chapter };
 
 export const library = reactive<Library>({ chapters: [], positions: {}, currentId: null });
-
-/** Chapters whose audio is all generated, per device (its own cache): id -> engine's audioSig. */
-export const readyMarks = useLocalStorage<Record<string, string>>("lectern.ready", {});
 
 /** Rough audio length before anything is generated, at 1.0x. */
 export const CHARS_PER_SEC = 15;
@@ -141,7 +138,6 @@ export function setChapterBody(id: string, text: string): boolean {
   const body = normalize(text);
   if (!body || !library.chapters.some((c) => c.id === id)) return false;
   commit({ op: "set", ids: [id], body });
-  delete readyMarks.value[id]; // changed text: some segments need audio again
   return true;
 }
 

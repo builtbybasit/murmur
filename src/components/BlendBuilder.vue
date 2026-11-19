@@ -2,7 +2,7 @@
 // Mix 2–4 voices with weight sliders. Produces `a:0.7,b:0.3` (servers like Kokoro accept it).
 import { computed, reactive } from "vue";
 import { Play, Plus, X } from "@lucide/vue";
-import { player, preview, stopPreview } from "../engine";
+import { previewing, preview, stopPreview } from "../preview";
 import { formatBlend, parseBlend, isBlend, type BlendPart } from "../lib/voice";
 import { type Role } from "../settings";
 
@@ -32,7 +32,7 @@ function add() {
   parts.push({ id: singles.value.find((v) => !parts.some((p) => p.id === v)) ?? "", w: 30 });
 }
 async function listen() {
-  if (player.previewing === result.value) return stopPreview();
+  if (previewing.value === result.value) return stopPreview();
   try {
     await preview(props.role, result.value);
   } catch (e) {
@@ -74,7 +74,7 @@ async function listen() {
       <code class="out">{{ result || "—" }}</code>
       <span class="sp" />
       <button class="btn" :disabled="!ready" @click="listen">
-        <Play :size="13" /> {{ player.previewing === result ? "Stop" : "Listen" }}
+        <Play :size="13" /> {{ previewing === result ? "Stop" : "Listen" }}
       </button>
       <button class="btn pri" :disabled="!ready" @click="emit('use', result)">Use blend</button>
     </div>

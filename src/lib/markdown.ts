@@ -281,3 +281,32 @@ export const plainTitle = (line: string) =>
     .map((s) => s.text)
     .join(" ")
     .trim();
+
+// ---------- pasted text ----------
+
+/** Normalise pasted text: line endings, trailing spaces, 3+ newlines. */
+export const normalize = (raw: string) =>
+  raw
+    .replace(/\r\n?/g, "\n")
+    .replace(/[ \t ]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+/** First line becomes the title when it looks like a heading; else `Chapter N`. */
+export function autoTitle(
+  text: string,
+  existingTitles: string[] = [],
+): { title: string; body: string } {
+  const nl = text.indexOf("\n");
+  const line = (nl < 0 ? text : text.slice(0, nl)).trim();
+  const first = plainTitle(line);
+  const rest = nl < 0 ? "" : text.slice(nl + 1).trim();
+  const heading =
+    /^(chapter|ch\.?|episode|ep\.?|part|book|volume|vol\.?|prologue|epilogue|interlude|side story)\b/i.test(
+      first,
+    ) || /^\d+\s*[.:\-–—]/.test(first);
+  const titleish = first.length <= 80 && !/[.!?…,;:"”'’]$/.test(first);
+  if (rest && (heading || titleish)) return { title: first, body: rest };
+  const top = Math.max(0, ...existingTitles.map((t) => +(t.match(/\d+/)?.[0] ?? 0)));
+  return { title: "Chapter " + ((top || existingTitles.length) + 1), body: text };
+}

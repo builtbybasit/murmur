@@ -1,27 +1,30 @@
-// Playback engine: TTS per segment with prefetch, audio cache, STT alignment, retries.
+// Playback engine: plays the open chapter segment by segment, fetching ahead, aligning words with
+// STT, retrying failures, and fetching the next chapter's start near the end. Audio: synth.ts.
 // CONTRACT: UI components only read `player` and call the exported functions below.
 import { computed, reactive, watch } from "vue";
-import { settings, voiceFor, providerById, type Provider, type Role } from "./settings";
-import {
-  library,
-  current,
-  currentDoc,
-  docOf,
-  CHARS_PER_SEC,
-  readyMarks,
-  setPosition,
-  type Chapter,
-} from "./library";
+import { settings, voiceFor, hasTts, type Provider } from "./settings";
+import { library, currentDoc, docOf, setPosition, CHARS_PER_SEC } from "./library";
 import { ui, toast } from "./ui";
-import type { Doc, Seg } from "./lib/segment";
-import { tts, stt as transcribe, ApiError, type ErrorCode, type ProviderError } from "./lib/api";
-import { alignWords, estimateTimes, type Span, type SttWord } from "./lib/align";
+import type { Doc } from "./lib/segment";
+import { MAX_RETRIES, retryDelay, toError, type ErrorCode, type ProviderError } from "./lib/api";
+import { alignWords, estimateTimes, type Span } from "./lib/align";
 import * as cache from "./lib/cache";
-import { describeImage, makeSpeaker } from "./lib/speech";
+import {
+  align,
+  audioSig,
+  getAudio,
+  keyOf,
+  onCached,
+  retrying,
+  spoken,
+  sttProvider,
+  SILENCE,
+  type CacheEntry,
+} from "./synth";
 
 export type Status = "idle" | "buffering" | "playing" | "paused" | "error" | "ended";
-export type SegState = "loading" | "ready" | "failed";
-export interface PlayerError {
+type SegState = "loading" | "ready" | "failed";
+interface PlayerError {
   seg: number;
   code: ErrorCode;
   status: number;
@@ -33,34 +36,31 @@ export interface PlayerError {
   gaveUp: boolean; // automatic retries exhausted
   retrying: boolean; // a retry request is in flight right now
 }
-export interface SttState {
+interface SttState {
   failing: boolean;
   fails: number; // failures in a row
   paused: boolean; // alignment paused for this chapter
   message: string; // e.g. "Local STT failed on 3 segments (HTTP 500)"
 }
-export interface Player {
+interface Player {
   status: Status;
   started: boolean; // playback has started in this chapter (reader shows band/word only then)
   seg: number; // current segment index in currentDoc
   word: number; // current word index in segs[seg].words, -1 = none
   timing: "aligned" | "estimated"; // for the current segment
-  segState: Record<number, SegState>; // current chapter; 'ready' = audio cached
-  aligned: Record<number, true>; // segments that have STT word timings
+  segState: Record<number, SegState>; // current chapter; 'ready' = audio available
   elapsed: number; // seconds into the chapter (known durations + estimates), at 1.0x
   total: number; // estimated chapter length in seconds at 1.0x
   totalExact: boolean; // true once every segment's duration is known
-  cachedCount: number; // segments of this chapter already in the cache
-  error: PlayerError | null; // provider error at the current segment, else null
+  cachedCount: number; // segments of this chapter with audio ready
+  readonly error: PlayerError | null; // provider error at the current segment, else null
   skipped: Record<number, true>; // failed segments the user skipped
   stt: SttState;
-  /** voice id being auditioned in Settings, else null */
-  previewing: string | null;
 }
-export type { ProviderError };
-export { ApiError };
 
 const freshStt = (): SttState => ({ failing: false, fails: 0, paused: false, message: "" });
+/** Failed segments of the open chapter. */
+const fails = reactive<Record<number, PlayerError>>({});
 export const player = reactive<Player>({
   status: "idle",
   started: false,
@@ -68,29 +68,23 @@ export const player = reactive<Player>({
   word: -1,
   timing: "estimated",
   segState: {},
-  aligned: {},
   elapsed: 0,
   total: 0,
   totalExact: false,
   cachedCount: 0,
-  error: null,
+  get error() {
+    return fails[this.seg] ?? null;
+  },
   skipped: {},
   stt: freshStt(),
-  previewing: null,
 });
 
 const MAX_JOBS = 2; // concurrent segment requests (cache reads included, they are quick)
-const MAX_RETRIES = 3;
-const RATE_DELAYS = [6, 12, 24];
-const NET_DELAYS = [4, 8, 16];
-export const PREVIEW_TEXT = "The tide came in twice that night, and only one of us noticed.";
 
 interface Mem {
   key: string;
-  blob: Blob;
+  entry: CacheEntry;
   url: string;
-  duration: number;
-  stt: SttWord[] | null;
   times: Span[] | null; // aligned
   est?: Span[];
 }
@@ -106,42 +100,30 @@ let streamed = false; // the element plays /relay/stream/<id>, the full blob may
 let streamTimes: Span[] = []; // estimated word times while streaming
 let startWord = 0; // word to start from when the current segment's audio arrives
 let raf = 0;
+let keys: string[] = []; // cache key per segment, for the current voices
 const mem = new Map<number, Mem>(); // decoded-ready audio around the playhead
-const jobs = new Map<number, AbortController>(); // in-flight cache reads / TTS
-const fails: Record<number, PlayerError> = {};
-const timers = new Map<number, ReturnType<typeof setTimeout>>();
-const cached = new Set<number>(); // segments known to be in the cache
+const jobs = new Map<number, AbortController>(); // in-flight cache reads / TTS (and retry waits)
 let durs: (number | undefined)[] = [];
 let sttJob: { i: number; ac: AbortController } | null = null;
 const sttTried = new Set<number>(); // STT never retries a segment on its own
 
 const noop = () => {};
 const segs = () => doc?.segs ?? [];
-const chapter = () => library.chapters.find((c) => c.id === chId) ?? null;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v || 0));
 const estDur = (i: number) => durs[i] ?? segs()[i]!.core.length / CHARS_PER_SEC;
-/** What the TTS is sent for a segment (rules + emoji/kaomoji removal). Recompiled when settings change. */
-const speaker = computed(() => makeSpeaker(settings.speech));
-/** What the TTS is sent for a segment; "" plays a short silence. */
-const spoken = (seg: Seg) =>
-  seg.img ? (settings.speech.images ? describeImage(seg.img.alt) : "") : speaker.value(seg.core);
-const sayOf = (i: number) => spoken(segs()[i]!);
 const before = (i: number) => {
   let s = 0;
   for (let j = 0; j < i; j++) s += estDur(j);
   return s;
 };
-/** Cache key of a segment of any chapter: provider, model, voice and spoken text. */
-const keyOf = (seg: Seg) => {
-  const v = voiceFor(seg.kind);
-  return cache.cacheKey(v.provider?.baseUrl ?? "", v.model, v.voice, spoken(seg));
+const timesOf = (i: number, m: Mem) =>
+  m.times ?? (m.est ??= estimateTimes(segs()[i]!, m.entry.duration));
+const chapterAfter = (id: string | null, delta: number) => {
+  const i = library.chapters.findIndex((c) => c.id === id);
+  return i < 0 ? null : (library.chapters[i + delta] ?? null);
 };
-const keyFor = (i: number) => keyOf(segs()[i]!);
-const timesOf = (i: number, m: Mem) => m.times ?? (m.est ??= estimateTimes(segs()[i]!, m.duration));
-const toPlain = (e: unknown): ProviderError =>
-  e instanceof ApiError
-    ? e.plain()
-    : { code: "network", status: 0, message: String((e as Error)?.message ?? e), retryAfter: null };
+/** The chapter after the open one, or null. */
+export const upNext = computed(() => chapterAfter(ui.currentId, 1));
 
 function el() {
   if (audio) return audio;
@@ -175,52 +157,13 @@ function el() {
       cache.dropEntry(m.key).catch(noop);
       URL.revokeObjectURL(m.url);
       mem.delete(i);
-      cached.delete(i);
       durs[i] = undefined;
     }
-    fail(
-      i,
-      new ApiError({
-        code: "http",
-        status: 0,
-        message: "The audio for this segment could not be played",
-        retryAfter: null,
-      }),
-    );
+    const message = "The audio for this segment could not be played";
+    setFail(i, { code: "http", status: 0, message, retryAfter: null }, 0, null);
+    updateTotals();
   });
   return a;
-}
-
-/** A silent 16-bit mono WAV of `sec` seconds. */
-function silence(sec: number, rate = 8000) {
-  const n = Math.round(sec * rate);
-  const v = new DataView(new ArrayBuffer(44 + n * 2));
-  const str = (o: number, x: string) => {
-    for (let k = 0; k < x.length; k++) v.setUint8(o + k, x.charCodeAt(k));
-  };
-  str(0, "RIFF");
-  v.setUint32(4, 36 + n * 2, true);
-  str(8, "WAVEfmt ");
-  v.setUint32(16, 16, true);
-  v.setUint16(20, 1, true);
-  v.setUint16(22, 1, true);
-  v.setUint32(24, rate, true);
-  v.setUint32(28, rate * 2, true);
-  v.setUint16(32, 2, true);
-  v.setUint16(34, 16, true);
-  str(36, "data");
-  v.setUint32(40, n * 2, true);
-  return new Blob([v.buffer], { type: "audio/wav" });
-}
-
-let actx: OfflineAudioContext | null = null;
-async function durationOf(blob: Blob) {
-  try {
-    actx ??= new OfflineAudioContext(1, 1, 44100);
-    return (await actx.decodeAudioData(await blob.arrayBuffer())).duration;
-  } catch {
-    return null;
-  }
 }
 
 function stopAudio() {
@@ -246,14 +189,12 @@ function updateTotals() {
   }
   player.total = t;
   player.totalExact = n > 0 && exact;
-  player.cachedCount = cached.size;
+  player.cachedCount = Object.values(player.segState).filter((s) => s === "ready").length;
 }
 
 function refreshStatus() {
-  const f = fails[player.seg];
-  player.error = f ? { ...f } : null;
   if (!doc) player.status = "idle";
-  else if (f) player.status = "error";
+  else if (fails[player.seg]) player.status = "error";
   else if (ended) player.status = "ended";
   else if (wantPlay)
     player.status =
@@ -285,8 +226,6 @@ function resetWork(keep = -1) {
   gen++;
   for (const ac of jobs.values()) ac.abort();
   jobs.clear();
-  for (const t of timers.values()) clearTimeout(t);
-  timers.clear();
   for (const k in fails) delete fails[k];
   sttJob?.ac.abort();
   sttJob = null;
@@ -297,29 +236,43 @@ function resetWork(keep = -1) {
       mem.delete(i);
     }
   durs = [];
-  cached.clear();
   player.segState = {};
-  player.aligned = {};
   player.skipped = {};
 }
 
 /** Read which segments are cached (and their durations) for the current chapter and voices. */
 async function scan() {
   const g = gen;
-  const n = segs().length;
-  const keys = Array.from({ length: n }, (_, i) => keyFor(i));
-  const es = await cache.getEntries(keys).catch(() => [] as (cache.CacheEntry | undefined)[]);
+  keys = segs().map(keyOf);
+  const es = await cache.getEntries(keys).catch(() => [] as (CacheEntry | undefined)[]);
   if (g !== gen) return;
-  es.forEach((e, i) => {
-    if (!e) return;
-    cached.add(i);
-    durs[i] = e.duration;
+  segs().forEach((seg, i) => {
+    const d = spoken(seg) ? es[i]?.duration : SILENCE; // nothing to say: always ready
+    if (d == null) return;
+    durs[i] = d;
     player.segState[i] ??= "ready";
-    if (e.stt) player.aligned[i] = true;
   });
   updateTotals();
   kick();
 }
+
+// Audio cached elsewhere (background generation, next-chapter prefetch, alignment) for this chapter.
+onCached((key, e) => {
+  let hit = false;
+  keys.forEach((k, i) => {
+    if (k !== key) return;
+    hit = true;
+    durs[i] = e.duration;
+    player.segState[i] ??= "ready";
+    const m = mem.get(i);
+    if (m && e.stt?.length && !m.times) {
+      m.entry.stt = e.stt;
+      m.times = alignWords(segs()[i]!.words, e.stt, m.entry.duration);
+    }
+  });
+  if (hit) updateTotals();
+  if (hit) update();
+});
 
 function load(
   id: string | null,
@@ -327,13 +280,13 @@ function load(
 ) {
   endGap(false);
   stopAhead(id); // opening the prefetched chapter lets it finish
-  const same = id === chId;
+  if (id !== chId) player.stt = freshStt();
   wantPlay = false;
   ended = false;
   stopAudio();
   resetWork();
   chId = id;
-  const c = chapter();
+  const c = library.chapters.find((c) => c.id === id);
   doc = c ? docOf(c) : null;
   const n = segs().length;
   Object.assign(player, {
@@ -343,7 +296,6 @@ function load(
     timing: "estimated",
     elapsed: 0,
   });
-  if (!same) player.stt = freshStt();
   startWord = 0;
   updateTotals();
   player.elapsed = doc ? before(player.seg) : 0;
@@ -368,8 +320,6 @@ function prune() {
   for (const k in fails) {
     const i = +k;
     if (out(i) && !player.skipped[i]) {
-      clearTimeout(timers.get(i));
-      timers.delete(i);
       delete fails[i];
       if (player.segState[i] === "failed") delete player.segState[i];
     }
@@ -391,13 +341,9 @@ function pump() {
   if (!doc || !player.started) return;
   const hi = Math.min(segs().length - 1, player.seg + settings.prefetch);
   for (let i = player.seg; i <= hi && jobs.size < MAX_JOBS; i++) {
-    if (mem.has(i) || jobs.has(i)) continue;
-    const skip = player.skipped[i] && i !== player.seg;
-    if (fails[i]) {
-      if (skip) continue;
-      break;
-    }
-    if (!skip) fetchSeg(i);
+    if (mem.has(i) || (player.skipped[i] && i !== player.seg)) continue;
+    if (fails[i]) break;
+    if (!jobs.has(i)) fetchSeg(i);
   }
 }
 
@@ -417,24 +363,16 @@ function kick() {
 // so it starts without a wait. They play from the cache when it opens.
 let ahead: { id: string; ac: AbortController } | null = null;
 async function prefetchNext() {
-  const n = segs().length;
-  const c = chapterAt(1);
-  if (!wantPlay || !c || ahead?.id === c.id || player.seg + settings.prefetch < n - 1) return;
+  const c = upNext.value;
+  if (!wantPlay || !c || ahead?.id === c.id || player.seg + settings.prefetch < segs().length - 1)
+    return;
+  stopAhead();
   const ac = new AbortController();
   ahead = { id: c.id, ac };
-  for (const seg of docOf(c).segs.slice(0, Math.max(1, settings.prefetch))) {
-    const say = spoken(seg);
-    const v = voiceFor(seg.kind);
-    const key = keyOf(seg);
-    if (!say || !v.provider || (await cache.getEntry(key).catch(() => null))) continue;
-    try {
-      const blob = await tts({ ...v, provider: v.provider, input: say, signal: ac.signal });
-      const duration = (await durationOf(blob)) ?? say.length / CHARS_PER_SEC;
-      await cache.putEntry(key, { blob, duration, bytes: blob.size, stt: null, at: Date.now() });
-    } catch {
-      return; // aborted or failing: the chapter fetches (and reports) it itself when it opens
-    }
-  }
+  try {
+    for (const seg of docOf(c).segs.slice(0, Math.max(1, settings.prefetch)))
+      await getAudio(seg, ac.signal);
+  } catch {} // stopped or failing: the chapter fetches (and reports) it itself when it opens
 }
 function stopAhead(keep?: string | null) {
   if (ahead && ahead.id !== keep) {
@@ -455,7 +393,7 @@ function startAudio(i: number, m: Mem) {
   playEl(a);
 }
 
-/** Play segment i while it is still being generated (see the relay in vite.config.ts). */
+/** Play segment i while it is still being generated (see the relay in dev/server.ts). */
 function startStream(i: number, id: string) {
   const a = el();
   loaded = i;
@@ -475,126 +413,74 @@ function playEl(a: HTMLAudioElement) {
   });
 }
 
+/** Get segment i's audio, retrying on its own (the error bar counts down) until it gives up. */
 function fetchSeg(i: number) {
   const seg = segs()[i]!;
-  const v = voiceFor(seg.kind);
-  const key = keyFor(i);
-  const g = gen;
   const ac = new AbortController();
   jobs.set(i, ac);
-  (async () => {
-    const say = sayOf(i);
-    let e: cache.CacheEntry | undefined;
-    // nothing speakable (a line that was only a kaomoji): a short silence, no request
-    if (!say) e = { blob: silence(0.3), duration: 0.3, bytes: 0, stt: [], at: Date.now() };
-    else e = await cache.getEntry(key).catch(() => undefined);
-    if (!e) {
-      if (!v.provider)
-        throw new ApiError({
-          code: "http",
-          status: 0,
-          message: `No provider is set for ${v.role}`,
-          retryAfter: null,
-        });
+  let tries = 0;
+  const get = () => {
+    const f = fails[i];
+    if (f) Object.assign(f, { retryAt: null, retrying: true });
+    if (player.segState[i] !== "ready") player.segState[i] = "loading";
+    refreshStatus();
+    // wanted right now and nothing plays: listen while it is generated
+    const live = i === player.seg && wantPlay && !startWord && loaded < 0 && !gap;
+    const onStream = (id: string) => void (!ac.signal.aborted && startStream(i, id));
+    return getAudio(seg, ac.signal, live ? onStream : undefined);
+  };
+  const wait = (e: ProviderError, n: number, sec: number) => {
+    tries = n + 1;
+    setFail(i, e, tries, Date.now() + sec * 1000);
+  };
+  retrying(get, ac.signal, wait).then(
+    (e) => {
       if (ac.signal.aborted) return;
-      player.segState[i] = "loading";
-      // the segment is wanted right now and nothing plays: listen while it is generated
-      const streamId =
-        i === player.seg && wantPlay && !startWord && loaded < 0 && !gap
-          ? crypto.randomUUID()
-          : undefined;
-      const pending = tts({
-        provider: v.provider,
-        model: v.model,
-        voice: v.voice,
-        input: say,
-        signal: ac.signal,
-        streamId,
-      });
-      if (streamId) startStream(i, streamId);
-      const blob = await pending;
-      const duration = (await durationOf(blob)) ?? say.length / CHARS_PER_SEC;
-      e = { blob, duration, bytes: blob.size, stt: null, at: Date.now() };
-      cache.putEntry(key, e).catch(noop); // quota errors: still playable from memory
-    }
-    if (ac.signal.aborted || g !== gen) return;
-    jobs.delete(i);
-    remember(i, key, e);
-    kick();
-  })().catch((err) => {
-    if (ac.signal.aborted || g !== gen) return;
-    jobs.delete(i);
-    fail(i, err);
-    kick();
-  });
+      jobs.delete(i);
+      remember(i, e);
+      kick();
+    },
+    (err) => {
+      if (ac.signal.aborted) return;
+      jobs.delete(i);
+      setFail(i, toError(err), tries, null);
+      kick();
+    },
+  );
 }
 
-function remember(i: number, key: string, e: cache.CacheEntry) {
+function remember(i: number, e: CacheEntry) {
   const old = mem.get(i);
   if (old) URL.revokeObjectURL(old.url);
-  const seg = segs()[i]!;
   mem.set(i, {
-    key,
-    blob: e.blob,
+    key: keys[i]!,
+    entry: e,
     url: URL.createObjectURL(e.blob),
-    duration: e.duration,
-    stt: e.stt,
-    times: e.stt ? alignWords(seg.words, e.stt, e.duration) : null,
+    times: e.stt?.length ? alignWords(segs()[i]!.words, e.stt, e.duration) : null,
   });
   durs[i] = e.duration;
-  cached.add(i);
   player.segState[i] = "ready";
-  if (e.stt) player.aligned[i] = true;
-  if (fails[i]) {
-    delete fails[i];
-    delete player.skipped[i];
-  }
+  delete fails[i];
+  delete player.skipped[i];
   updateTotals();
 }
 
-function fail(i: number, err: unknown) {
+/** Segment i failed; retryAt: when the automatic retry runs (null: none planned). */
+function setFail(i: number, e: ProviderError, attempt: number, retryAt: number | null) {
   if (i === loaded && streamed) stopAudio(); // its stream will never finish
-  const e = toPlain(err);
-  const retryable =
-    e.code === "rate" || e.code === "network" || (e.code === "http" && e.status >= 500);
-  const done = fails[i]?.attempt ?? 0; // automatic retries already used
-  const f: PlayerError = {
+  fails[i] = {
     seg: i,
     code: e.code,
     status: e.status,
     message: e.message,
     providerId: voiceFor(segs()[i]!.kind).provider?.id ?? null,
-    attempt: done,
+    attempt,
     maxAttempts: MAX_RETRIES,
-    retryAt: null,
-    gaveUp: false,
+    retryAt,
+    gaveUp: !retryAt && retryDelay(e, 0) != null,
     retrying: false,
   };
-  if (retryable && done < MAX_RETRIES) {
-    const s = e.code === "rate" ? (e.retryAfter ?? RATE_DELAYS[done]!) : NET_DELAYS[done]!;
-    f.attempt = done + 1;
-    f.retryAt = Date.now() + s * 1000;
-    timers.set(
-      i,
-      setTimeout(() => {
-        timers.delete(i);
-        runRetry(i);
-      }, s * 1000),
-    );
-  } else f.gaveUp = retryable;
-  fails[i] = f;
   player.segState[i] = "failed";
-  refreshStatus();
-}
-
-function runRetry(i: number) {
-  const f = fails[i];
-  if (!f || jobs.has(i)) return;
-  clearTimeout(timers.get(i));
-  timers.delete(i);
-  f.retryAt = null;
-  f.retrying = true;
-  fetchSeg(i);
   refreshStatus();
 }
 
@@ -603,8 +489,8 @@ function go(i: number, w = 0) {
   endGap(false);
   ended = false;
   const m = mem.get(i);
-  // a stream cannot seek: once the blob is here, play that from the word instead
-  if (loaded >= 0 && (loaded !== i || (streamed && m))) stopAudio();
+  // a stream cannot seek: the blob plays from the word once it is here
+  if (loaded >= 0 && (loaded !== i || streamed)) stopAudio();
   player.seg = i;
   player.word = w;
   startWord = w;
@@ -642,14 +528,13 @@ function advance() {
     kick(); // keeps fetching ahead during the pause
     return;
   }
-  const next = chapterAt(1);
-  if (next && sleepTimer.mode === "chapter") {
-    setSleep(null);
+  const next = upNext.value;
+  const stop = stopAtChapterEnd();
+  if (next && !stop) return open(next.id, { autoplay: true, seg: 0 });
+  if (next) {
     open(next.id, { seg: 0 }); // ready at the next chapter, paused
     return toast({ title: "Sleep timer: stopped at the end of the chapter" });
   }
-  if (next) return open(next.id, { autoplay: true, seg: 0 });
-  if (sleepTimer.mode === "chapter") setSleep(null);
   stopAudio();
   wantPlay = false;
   ended = true;
@@ -658,49 +543,30 @@ function advance() {
   toast({ title: "End of the list", sub: "Paste the next chapter with ⌘V to keep listening" });
 }
 
-function chapterAt(delta: number) {
-  const i = library.chapters.findIndex((c) => c.id === chId);
-  return i < 0 ? null : (library.chapters[i + delta] ?? null);
-}
-
 // ---------- STT ----------
 
 function pumpStt() {
-  if (sttJob || !doc || !player.started) return;
-  const s = settings.stt;
-  const prov = providerById(s.providerId);
-  if (!s.enabled || !prov || player.stt.paused) return;
+  if (sttJob || !doc || !player.started || player.stt.paused) return;
+  const prov = sttProvider();
+  if (!prov) return;
   const hi = Math.min(segs().length - 1, player.seg + settings.prefetch);
   for (let i = player.seg; i <= hi; i++) {
     const m = mem.get(i);
-    if (m && !m.stt && !sttTried.has(i)) return void runStt(i, m, prov, s.model);
+    if (m && !m.entry.stt && !sttTried.has(i)) return void runStt(i, m, prov);
   }
 }
 
-async function runStt(i: number, m: Mem, prov: Provider, model: string) {
+async function runStt(i: number, m: Mem, prov: Provider) {
   sttTried.add(i);
   const g = gen;
   const ac = new AbortController();
   sttJob = { i, ac };
   try {
-    const { words } = await transcribe({ provider: prov, model, blob: m.blob, signal: ac.signal });
-    if (!words.length)
-      throw new ApiError({
-        code: "http",
-        status: 0,
-        message: "no word timestamps",
-        retryAfter: null,
-      });
-    if (g !== gen) return;
-    m.stt = words;
-    m.times = alignWords(segs()[i]!.words, words, m.duration);
-    player.aligned[i] = true;
-    if (i === player.seg) player.timing = "aligned";
-    player.stt = freshStt();
-    cache.setStt(m.key, words).catch(noop);
+    await align(m.key, m.entry, prov, settings.stt.model, ac.signal); // onCached sets the times
+    if (g === gen) player.stt = freshStt();
   } catch (err) {
     if (ac.signal.aborted || g !== gen) return;
-    const e = toPlain(err);
+    const e = toError(err);
     const st = player.stt;
     st.fails++;
     st.failing = true;
@@ -714,13 +580,19 @@ async function runStt(i: number, m: Mem, prov: Provider, model: string) {
 
 // ---------- watchers ----------
 
-// Chapter switched from outside (deleted, store init) or re-segmented (quote rule toggled).
+// The open chapter is ui.currentId (open() sets it); a new doc for it (text edited, quote rule
+// toggled) reloads in place.
+let opening: { id: string; seg?: number; autoplay?: boolean } | null = null;
+const takeOpening = (id: string | null) => {
+  const o = opening?.id === id ? opening : {};
+  opening = null;
+  return o;
+};
 watch(
   [() => ui.currentId, currentDoc],
   ([id, d]) => {
-    if (id === chId && d === doc) return; // our own open()
-    if (id === chId) load(id, { seg: player.seg, autoplay: wantPlay, keepStarted: true });
-    else load(id);
+    if (id !== chId) load(id, takeOpening(id));
+    else if (d !== doc) load(id, { seg: player.seg, autoplay: wantPlay, keepStarted: true });
   },
   { immediate: true },
 );
@@ -733,19 +605,8 @@ watch(
     else if (seg != null && seg !== player.seg) seek(seg, 0, { play: false });
   },
 );
-// Voice changed: cache keys changed. The segment already playing finishes in the old voice.
-watch(
-  () =>
-    (["narr", "dlg", "sys"] as const)
-      .map((k) => ((v) => [v.provider?.baseUrl, v.model, v.voice].join("|"))(voiceFor(k)))
-      .join("#"),
-  () => refresh(),
-);
-// Spoken-text rules changed: affected segments get new cache keys, like a voice change.
-watch(
-  () => JSON.stringify(settings.speech),
-  () => refresh(),
-);
+// Voices or spoken text changed: cache keys changed. The segment already playing finishes as it is.
+watch(audioSig, () => rescan());
 watch(
   () => settings.speed,
   (v) => audio && (audio.defaultPlaybackRate = audio.playbackRate = v),
@@ -765,201 +626,13 @@ watch(
   },
 );
 
-function refresh() {
-  stopAhead(); // voices or spoken text changed: the prefetched keys are stale
-  restartGenerate(); // the running chapter job starts over with the new keys
+/** Cache keys changed or audio was deleted: look at the cache again. */
+export function rescan() {
+  stopAhead();
   if (!doc) return;
   resetWork(loaded);
   void scan();
   kick();
-}
-
-// ---------- generate whole chapters in the background ----------
-
-/** Everything that changes a chapter's cache keys: voices, spoken-text rules, quote rule. */
-export const audioSig = computed(() =>
-  cache.cacheKey(
-    "sig",
-    "",
-    "",
-    JSON.stringify([
-      (["narr", "dlg", "sys"] as const).map((k) => {
-        const v = voiceFor(k);
-        return [v.provider?.baseUrl, v.model, v.voice];
-      }),
-      settings.speech,
-      settings.smartQuotes,
-    ]),
-  ),
-);
-/** queued | running | failed | done, or null: "done" survives reloads via readyMarks. */
-export const genState = (c: Chapter) =>
-  generating[c.id]?.state ?? (readyMarks.value[c.id] === audioSig.value ? "done" : null);
-
-export interface GenJob {
-  state: "queued" | "running" | "done" | "failed";
-  done: number; // segments ready (audio, and word timings when alignment is on)
-  total: number;
-  error: string;
-}
-/** Chapter id -> background generation job. Chapters run one at a time, in click order. */
-export const generating = reactive<Record<string, GenJob>>({});
-const genQueue: string[] = [];
-let genRunning: { id: string; ac: AbortController } | null = null;
-
-/** Start (or queue) generating a chapter's audio; on a queued/running chapter, stop it. */
-export function toggleGenerate(id: string) {
-  const j = generating[id];
-  if (j?.state === "queued" || j?.state === "running") {
-    const q = genQueue.indexOf(id);
-    if (q >= 0) genQueue.splice(q, 1);
-    if (genRunning?.id === id) genRunning.ac.abort();
-    delete generating[id];
-    return;
-  }
-  generating[id] = { state: "queued", done: 0, total: 0, error: "" };
-  genQueue.push(id);
-  void genLoop();
-}
-
-function restartGenerate() {
-  if (!genRunning) return;
-  const { id, ac } = genRunning;
-  ac.abort();
-  generating[id] = { state: "queued", done: 0, total: 0, error: "" };
-  genQueue.unshift(id);
-}
-
-const sleep = (ms: number, signal: AbortSignal) =>
-  new Promise<void>((res, rej) => {
-    const t = setTimeout(res, ms);
-    signal.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(t);
-        rej(new DOMException("stopped", "AbortError"));
-      },
-      { once: true },
-    );
-  });
-
-async function genLoop() {
-  if (genRunning) return;
-  while (genQueue.length) {
-    const id = genQueue.shift()!;
-    const c = library.chapters.find((c) => c.id === id);
-    const j = generating[id];
-    if (!c || !j) {
-      delete generating[id];
-      continue;
-    }
-    const ac = new AbortController();
-    genRunning = { id, ac };
-    j.state = "running";
-    try {
-      await genChapter(c.id, docOf(c), j, ac.signal);
-      j.state = "done";
-      readyMarks.value[c.id] = audioSig.value;
-    } catch (e) {
-      if (!ac.signal.aborted) {
-        Object.assign(j, { state: "failed", error: toPlain(e).message });
-        ac.abort(); // stops the other worker
-      }
-    }
-    genRunning = null;
-  }
-}
-
-async function genChapter(id: string, d: Doc, j: GenJob, signal: AbortSignal) {
-  const align = () => settings.stt.enabled && providerById(settings.stt.providerId);
-  const keys = d.segs.map(keyOf);
-  const have = await cache.getEntries(keys).catch(() => [] as (cache.CacheEntry | undefined)[]);
-  j.total = d.segs.length;
-  j.done = 0;
-  const todo: number[] = [];
-  d.segs.forEach((seg, i) => {
-    const e = have[i];
-    if (!spoken(seg) || (e && (e.stt || !align()))) j.done++;
-    else todo.push(i);
-  });
-  let sttFails = 0;
-  // two workers; the second rests while you listen, and both wait while playback is buffering
-  const worker = async (k: number) => {
-    while (todo.length) {
-      while (player.status === "buffering" || (k && wantPlay)) await sleep(300, signal);
-      const i = todo.shift();
-      if (i === undefined) return;
-      const seg = d.segs[i]!;
-      let e = have[i];
-      if (!e) {
-        const v = voiceFor(seg.kind);
-        if (!v.provider) throw new Error(`No provider is set for ${v.role}`);
-        const say = spoken(seg);
-        const blob = await retrying(
-          () => tts({ provider: v.provider!, model: v.model, voice: v.voice, input: say, signal }),
-          signal,
-        );
-        const duration = (await durationOf(blob)) ?? say.length / CHARS_PER_SEC;
-        e = { blob, duration, bytes: blob.size, stt: null, at: Date.now() };
-        await cache.putEntry(keys[i]!, e).catch(noop);
-      }
-      const sp = align();
-      if (sp && !e.stt && sttFails < 3)
-        try {
-          const { words } = await transcribe({
-            provider: sp,
-            model: settings.stt.model,
-            blob: e.blob,
-            signal,
-          });
-          if (words.length) {
-            e.stt = words;
-            await cache.setStt(keys[i]!, words).catch(noop);
-          }
-          sttFails = 0;
-        } catch (err) {
-          if (signal.aborted) throw err;
-          sttFails++; // alignment is a bonus: after 3 failures in a row, audio only
-        }
-      if (id === chId) noteCached(i, e);
-      j.done++;
-    }
-  };
-  await Promise.all([worker(0), worker(1)]);
-}
-
-/** Retry rate limits, network errors and 5xx like playback does. */
-async function retrying<T>(f: () => Promise<T>, signal: AbortSignal): Promise<T> {
-  for (let n = 0; ; n++)
-    try {
-      return await f();
-    } catch (err) {
-      const e = toPlain(err);
-      const again =
-        e.code === "rate" || e.code === "network" || (e.code === "http" && e.status >= 500);
-      if (signal.aborted || !again || n >= MAX_RETRIES) throw err;
-      await sleep(
-        1000 * (e.code === "rate" ? (e.retryAfter ?? RATE_DELAYS[n]!) : NET_DELAYS[n]!),
-        signal,
-      );
-    }
-}
-
-/** A background job cached segment i of the open chapter: show it as ready. */
-function noteCached(i: number, e: cache.CacheEntry) {
-  if (!doc) return;
-  cached.add(i);
-  durs[i] = e.duration;
-  player.segState[i] ??= "ready";
-  const m = mem.get(i);
-  if (e.stt) {
-    player.aligned[i] = true;
-    if (m && !m.stt) {
-      m.stt = e.stt;
-      m.times = alignWords(segs()[i]!.words, e.stt, m.duration);
-    }
-  }
-  updateTotals();
 }
 
 // ---------- sleep timer ----------
@@ -987,18 +660,21 @@ export function setSleep(mode: null | "chapter" | number) {
   }, 1000);
 }
 
+/** At a chapter's end: true when the sleep timer says stop here (it turns itself off). */
+function stopAtChapterEnd() {
+  if (sleepTimer.mode !== "chapter") return false;
+  setSleep(null);
+  return true;
+}
+
 // ---------- public API ----------
 
+/** Play. Does nothing without a TTS provider (the caller shows where to add one). */
 export function play() {
-  if (!voiceFor("narr").provider) {
-    ui.view = "settings";
-    ui.settingsTab = "providers";
-    return;
-  }
-  if (!doc) return;
+  if (!doc || !hasTts.value) return;
   if (ended) {
     ended = false;
-    const next = chapterAt(1); // pasted since we stopped
+    const next = upNext.value; // pasted since we stopped
     return next ? open(next.id, { autoplay: true, seg: 0 }) : seek(0);
   }
   if (fails[player.seg]) return retry();
@@ -1023,12 +699,18 @@ export function toggle() {
   else play();
 }
 
-/** Jump to a segment (and word within it). Re-enables follow. play:false keeps the current play/pause state. */
+/** Jump to a segment (and word within it). play:false keeps the current play/pause state. */
 export function seek(seg: number, word = 0, { play: autoplay = true }: { play?: boolean } = {}) {
   if (!doc) return;
-  ui.follow = true;
   go(clamp(seg, 0, segs().length - 1), Math.max(0, word));
   if (autoplay && !wantPlay) play();
+}
+
+/** Jump to the segment playing `t` seconds into the chapter (at 1.0x). */
+export function seekTime(t: number) {
+  let i = 0;
+  while (i < segs().length - 1 && t >= estDur(i)) t -= estDur(i++);
+  seek(i, 0, { play: false });
 }
 
 export function next() {
@@ -1059,35 +741,27 @@ export function prevPara() {
 }
 
 export function nextChapter() {
-  const c = chapterAt(1);
+  const c = upNext.value;
   if (c) open(c.id, { autoplay: wantPlay });
 }
 export function prevChapter() {
-  const c = chapterAt(-1);
+  const c = chapterAfter(ui.currentId, -1);
   if (c) open(c.id, { autoplay: wantPlay });
 }
 
-/** Open a chapter's text in the editor (Reader). Pauses playback; saving re-segments in place. */
-export function edit(id: string) {
-  pause();
-  if (ui.currentId !== id) open(id);
-  ui.view = "reader";
-  ui.editingId = id;
-}
-
-/** Show a chapter in the reader and point the engine at it (at its saved position). */
+/** Open a chapter (at its saved position, or `seg`): it becomes ui.currentId. */
 export function open(
   id: string,
   { autoplay = false, seg }: { autoplay?: boolean; seg?: number } = {},
 ) {
-  ui.follow = true;
   if (id === chId && doc) {
     if (seg != null) seek(seg, 0, { play: autoplay });
     else if (autoplay) play();
     return;
   }
-  load(id, { seg, autoplay });
-  ui.currentId = id;
+  opening = { id, seg, autoplay };
+  if (ui.currentId === id) load(id, takeOpening(id));
+  else ui.currentId = id; // the watcher above loads it
 }
 
 /** retry the failed segment now */
@@ -1095,12 +769,13 @@ export function retry() {
   const i = player.seg;
   const f = fails[i];
   if (!f) return;
-  f.attempt = 0; // a manual retry restarts the automatic schedule
-  f.gaveUp = false;
+  jobs.get(i)?.abort();
+  jobs.delete(i);
+  Object.assign(f, { attempt: 0, gaveUp: false }); // a manual retry restarts the automatic schedule
   wantPlay = true;
   player.started = true;
   ended = false;
-  runRetry(i);
+  fetchSeg(i);
 }
 
 /** skip the failed segment */
@@ -1108,8 +783,6 @@ export function skip() {
   const i = player.seg;
   const f = fails[i];
   if (f) {
-    clearTimeout(timers.get(i));
-    timers.delete(i);
     jobs.get(i)?.abort();
     jobs.delete(i);
     Object.assign(f, { retryAt: null, retrying: false });
@@ -1130,181 +803,4 @@ export function retryAlignment() {
 /** 0.5..3.0, step 0.1, persisted in settings.speed */
 export function setSpeed(v: number) {
   settings.speed = Math.round(clamp(v, 0.5, 3) * 10) / 10;
-}
-
-let previewEl: HTMLAudioElement | null = null;
-/** Speak a fixed sentence with a role's current voice. Throws ApiError on failure. */
-const previews = new Map<string, string>(); // provider|model|voice -> object URL
-
-/** Speak PREVIEW_TEXT with a role's provider and model; `voice` overrides the role's voice (audition, blends). */
-export async function preview(role: Role, voice?: string) {
-  const v = { ...voiceFor(({ narration: "narr", dialogue: "dlg", system: "sys" } as const)[role]) };
-  if (voice) v.voice = voice;
-  if (!v.provider)
-    throw new ApiError({
-      code: "http",
-      status: 0,
-      message: "Pick a provider first",
-      retryAfter: null,
-    });
-  const key = [v.provider.baseUrl, v.model, v.voice].join("|");
-  stopPreview();
-  player.previewing = v.voice;
-  try {
-    let url = previews.get(key);
-    if (!url) {
-      const blob = await tts({
-        provider: v.provider,
-        model: v.model,
-        voice: v.voice,
-        input: PREVIEW_TEXT,
-      });
-      previews.set(key, (url = URL.createObjectURL(blob)));
-    }
-    if (player.previewing !== v.voice) return; // another audition started meanwhile
-    const a = (previewEl = new Audio(url));
-    a.onended = a.onpause = () => {
-      if (previewEl === a) player.previewing = null;
-    };
-    await a.play();
-  } catch (e) {
-    if (player.previewing === v.voice) player.previewing = null;
-    throw e;
-  }
-}
-
-export function stopPreview() {
-  previewEl?.pause();
-  previewEl = null;
-  player.previewing = null;
-}
-
-// ---------- storage by book ----------
-
-export interface BookStorage {
-  book: string; // "" = loose chapters
-  chapters: number;
-  segments: number;
-  cached: number;
-  bytes: number;
-  keys: string[];
-}
-/**
- * Cached audio per book for the current voices, plus "other" audio: old voices, old
- * spoken-text rules and deleted chapters (nothing in the library would play it).
- */
-export async function storageByBook(): Promise<{
-  books: BookStorage[];
-  other: { segments: number; bytes: number; keys: string[] };
-}> {
-  const size = new Map(await cache.sizes());
-  const byBook = new Map<string, BookStorage>();
-  const used = new Set<string>();
-  for (const c of library.chapters) {
-    const book = c.book ?? "";
-    let b = byBook.get(book);
-    if (!b)
-      byBook.set(book, (b = { book, chapters: 0, segments: 0, cached: 0, bytes: 0, keys: [] }));
-    b.chapters++;
-    for (const seg of docOf(c).segs) {
-      if (!spoken(seg)) continue;
-      const k = keyOf(seg);
-      b.segments++;
-      if (!size.has(k) || used.has(k)) continue; // a repeated line is counted once
-      used.add(k);
-      b.cached++;
-      b.bytes += size.get(k)!;
-      b.keys.push(k);
-    }
-  }
-  const other = [...size].filter(([k]) => !used.has(k));
-  return {
-    books: [...byBook.values()],
-    other: {
-      segments: other.length,
-      bytes: other.reduce((n, [, v]) => n + v, 0),
-      keys: other.map(([k]) => k),
-    },
-  };
-}
-
-/** Delete cached audio by key; a book's chapters lose their "fully generated" mark. */
-export async function dropAudio(keys: string[], book?: string) {
-  await cache.dropEntries(keys);
-  if (book !== undefined)
-    for (const c of library.chapters) if ((c.book ?? "") === book) delete readyMarks.value[c.id];
-  refresh();
-}
-
-/** { segments, bytes } across all chapters */
-export async function cacheStats(): Promise<{ segments: number; bytes: number }> {
-  return cache.stats().catch(() => ({ segments: 0, bytes: 0 }));
-}
-
-export async function clearCache() {
-  await cache.clearAll();
-  refresh();
-}
-
-// ---------- lock screen, media keys, headphones (Media Session API) ----------
-
-if ("mediaSession" in navigator) {
-  const ms = navigator.mediaSession;
-  const actions: [MediaSessionAction, MediaSessionActionHandler][] = [
-    ["play", () => play()],
-    ["pause", () => pause()],
-    ["stop", () => pause()],
-    // track buttons (AirPods double tap, F7/F9) move by paragraph, seek buttons by segment
-    ["previoustrack", () => prevPara()],
-    ["nexttrack", () => nextPara()],
-    ["seekbackward", () => prev()],
-    ["seekforward", () => next()],
-    [
-      "seekto",
-      (d) => {
-        // the scrubber is in chapter seconds at the current speed; find that segment
-        let t = (d.seekTime ?? 0) * settings.speed;
-        let i = 0;
-        while (i < segs().length - 1 && t >= estDur(i)) t -= estDur(i++);
-        seek(i, 0, { play: false });
-      },
-    ],
-  ];
-  for (const [a, h] of actions)
-    try {
-      ms.setActionHandler(a, h);
-    } catch {} // an action this browser does not know
-
-  watch(
-    () => [current.value?.title, player.seg, currentDoc.value?.segs.length] as const,
-    ([title, seg, n]) => {
-      ms.metadata = title
-        ? new MediaMetadata({
-            title,
-            artist: n ? `Segment ${seg + 1} of ${n}` : "",
-            album: "lectern",
-          })
-        : null;
-    },
-  );
-  watch(
-    () => [player.status, player.seg, player.total, settings.speed] as const,
-    ([status]) => {
-      ms.playbackState =
-        status === "playing" || status === "buffering"
-          ? "playing"
-          : status === "idle"
-            ? "none"
-            : "paused";
-      const duration = player.total / settings.speed;
-      if (!duration) return;
-      try {
-        ms.setPositionState({
-          duration,
-          position: Math.min(duration, player.elapsed / settings.speed),
-          playbackRate: settings.speed,
-        });
-      } catch {}
-    },
-  );
 }
