@@ -5,15 +5,80 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>murmur</title>
+    <script>
+      // the theme before anything else loads, so the loading screen is not a white flash
+      try {
+        const t = JSON.parse(localStorage.getItem("murmur.device") || "{}").reading?.theme;
+        document.documentElement.dataset.theme =
+          t && t !== "system"
+            ? t
+            : matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light";
+      } catch {}
+    </script>
+    <style>
+      /* shown until the app mounts over it; colours match --bg / --ink3 / --acc in style.css */
+      html {
+        background: #e9edf3;
+        color: #728096;
+      }
+      html[data-theme="dark"] {
+        background: #0b0f15;
+        color: #66758b;
+      }
+      .boot {
+        height: 100vh;
+        display: grid;
+        place-content: center;
+        justify-items: center;
+        gap: 14px;
+        font:
+          14px system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+      }
+      .boot b {
+        font-size: 18px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        color: #2d5bdb;
+      }
+      html[data-theme="dark"] .boot b {
+        color: #7da5ff;
+      }
+      .boot i {
+        width: 120px;
+        height: 2px;
+        border-radius: 2px;
+        background: linear-gradient(90deg, transparent, currentColor, transparent) 0 0 / 50% 100%
+          no-repeat;
+        animation: boot 1.1s ease-in-out infinite;
+      }
+      @keyframes boot {
+        from {
+          background-position: -100% 0;
+        }
+        to {
+          background-position: 200% 0;
+        }
+      }
+    </style>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- fonts load without holding up the first paint; text shows in system fonts until they arrive -->
     <link
       href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap"
       rel="stylesheet"
+      media="print"
+      onload="this.media = 'all'"
     />
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <div class="boot"><b>murmur</b><i></i><span>Loading your library…</span></div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
