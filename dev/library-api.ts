@@ -9,6 +9,7 @@ import { dirname, join } from "node:path";
 
 // Paths are resolved on first use, so loading the config (lint, format) touches nothing.
 const DATA = () => process.env.LECTERN_DATA ?? join(homedir(), ".lectern");
+export const dataDir = DATA;
 const IMAGES = () => {
   const dir = join(DATA(), "images");
   mkdirSync(dir, { recursive: true });
@@ -24,8 +25,10 @@ function getKey() {
 }
 
 const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
+/** This Mac needs no key; anything else (including what the phone door forwards) does. */
 export const allowed = (req: IncomingMessage) =>
-  LOOPBACK.has(req.socket.remoteAddress ?? "") || req.headers["x-lectern-key"] === getKey();
+  (LOOPBACK.has(req.socket.remoteAddress ?? "") && !req.headers["x-lectern-remote"]) ||
+  req.headers["x-lectern-key"] === getKey();
 
 export async function readBody(req: IncomingMessage) {
   const chunks: Buffer[] = [];
@@ -111,6 +114,8 @@ export async function api(req: IncomingMessage, res: ServerResponse) {
       save();
       return send(res, 204);
     }
+    // the phone link for the app's "Listen on your phone" QR code (empty: not on the network)
+    if (kind === "phone" && m === "GET") return send(res, 200, { links });
     if (kind === "settings" && m === "GET") return send(res, 200, readJson(SETTINGS()));
     if (kind === "settings" && m === "PUT") {
       writeAtomic(SETTINGS(), await readBody(req));
@@ -142,9 +147,10 @@ export async function api(req: IncomingMessage, res: ServerResponse) {
 }
 
 /** The links a phone on the same network opens (with the key, which the app then remembers). */
+let links: string[] = [];
 export function phoneLinks(https: boolean, port: number) {
-  return Object.values(networkInterfaces())
+  return (links = Object.values(networkInterfaces())
     .flat()
     .filter((a) => a && a.family === "IPv4" && !a.internal)
-    .map((a) => `${https ? "https" : "http"}://${a!.address}:${port}/?key=${getKey()}`);
+    .map((a) => `${https ? "https" : "http"}://${a!.address}:${port}/?key=${getKey()}`));
 }

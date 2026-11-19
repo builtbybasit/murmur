@@ -150,12 +150,23 @@ export async function startSync() {
     const mine = joining ? library.chapters.filter((c) => !known.has(c.id)) : [];
     apply(first.lib, first.s);
     if (mine.length) library.chapters.push(...mine); // uploaded by the watcher below
-  } else {
-    // the first device to connect brings its library and settings
+  } else if (library.chapters.length) {
+    // the first device with chapters brings its library and its own settings
     await putJson("library", library.chapters).catch(() => {});
     remember(library.chapters);
-    sentSettings = "";
-    if (first.s) apply({ chapters: library.chapters }, first.s);
+    sentSettings = ""; // uploaded by the push below, over anything an empty device sent
+  } else {
+    // nothing here and nothing on the server: an empty device never sets up the shared library;
+    // it joins on its next pull, or sets it up with the first chapter you add
+    // (one shot: the next attempt sets everything up once)
+    const retry = () => {
+      stop();
+      window.removeEventListener("focus", retry);
+      void startSync();
+    };
+    const stop = watchDebounced(() => library.chapters.length, retry, { debounce: 400 });
+    window.addEventListener("focus", retry);
+    return;
   }
   localStorage.setItem("lectern.synced", "1");
   watchDebounced(() => library.chapters, push, { deep: true, debounce: 400 });

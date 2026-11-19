@@ -1,8 +1,9 @@
 import vue from "@vitejs/plugin-vue";
-import basicSsl from "@vitejs/plugin-basic-ssl";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { renderUnicodeCompact } from "uqr";
 import { allowed, api, phoneLinks, readBody } from "./dev/library-api";
+import { openPhoneDoor } from "./dev/phone-door";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { defineConfig, lazyPlugins, type Plugin } from "vite-plus";
@@ -116,7 +117,9 @@ async function relay(req: IncomingMessage, res: ServerResponse) {
     res.end(String(e.cause?.message ?? e.message));
   }
 }
-const PHONE = !!process.env.LECTERN_PHONE; // `bun run phone`: on the network, over HTTPS
+// The dev server is always reachable from your phone: on the network, over HTTPS (phones only
+// allow lock-screen controls on secure pages). LECTERN_LOCAL=1 keeps it to this Mac, plain HTTP.
+const PHONE = !process.env.LECTERN_LOCAL;
 
 const relayPlugin: Plugin = {
   name: "lectern-relay",
@@ -124,14 +127,22 @@ const relayPlugin: Plugin = {
     s.middlewares.use("/relay", relay);
     s.middlewares.use("/api", api);
     if (PHONE)
-      s.httpServer?.once("listening", () =>
+      s.httpServer?.once("listening", async () => {
+        const door = await openPhoneDoor((s.httpServer!.address() as AddressInfo).port);
+        if (!door) return;
+        s.httpServer!.once("close", door.close); // Vite restarts on config changes
+        const links = phoneLinks(true, door.port);
         setTimeout(() => {
-          const port = (s.httpServer!.address() as AddressInfo).port;
-          console.log("\n  Phone (same Wi-Fi; accept the certificate warning once):");
-          for (const l of phoneLinks(true, port)) console.log("  ➜  " + l);
-          console.log();
-        }, 50),
-      );
+          if (!links[0]) return;
+          console.log(
+            "\n  On your phone (same Wi-Fi): scan, then accept the certificate warning once",
+          );
+          // black on white whatever the terminal theme: phone cameras read dark-on-light codes
+          const qr = renderUnicodeCompact(links[0], { border: 1 });
+          console.log(qr.replace(/^.*$/gm, (l) => `  \x1b[30;107m${l}\x1b[0m`));
+          console.log("  ➜  " + links[0] + "\n");
+        }, 50);
+      });
   },
   configurePreviewServer(s) {
     s.middlewares.use("/relay", relay);
@@ -147,6 +158,5 @@ export default defineConfig({
     rules: { "vite-plus/prefer-vite-plus-imports": "error" },
     options: { typeAware: true, typeCheck: true },
   },
-  server: PHONE ? { host: true } : {},
-  plugins: lazyPlugins(() => [vue(), relayPlugin, ...(PHONE ? [basicSsl()] : [])]),
+  plugins: lazyPlugins(() => [vue(), relayPlugin]),
 });
