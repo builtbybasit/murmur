@@ -1,34 +1,13 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
 import { device, FONTS } from "../settings";
-import { ui } from "../ui";
+import { placePopover } from "../ui";
 
-const el = ref<HTMLElement>();
 const r = device.reading;
 const themes = ["light", "dark", "system"] as const;
-
-watch(
-  () => ui.readingOpen,
-  (open) => {
-    if (el.value && el.value.matches(":popover-open") !== open) el.value.togglePopover(open);
-  },
-);
-
-// Popover API owns light dismiss and Esc; mirror its state and pin it under the Aa button
-// (beforetoggle, so it is placed before the first paint).
-function onToggle(e: Event) {
-  const open = (e as ToggleEvent).newState === "open";
-  ui.readingOpen = open;
-  const btn = document.querySelector('[popovertarget="aa"]');
-  if (!open || !btn || !el.value) return;
-  const b = btn.getBoundingClientRect();
-  el.value.style.right = Math.max(8, innerWidth - b.right) + "px";
-  el.value.style.top = b.bottom + 6 + "px";
-}
 </script>
 
 <template>
-  <div id="aa" ref="el" popover class="pop" @beforetoggle="onToggle">
+  <div id="aa" popover class="pop" @beforetoggle="placePopover($event, 'below')">
     <h4>Reading</h4>
     <div class="fonts">
       <button
@@ -72,26 +51,6 @@ function onToggle(e: Event) {
 </template>
 
 <style scoped>
-.pop {
-  margin: 0;
-  inset: auto;
-  position: fixed;
-  border: 1px solid var(--line2);
-  border-radius: var(--r3);
-  background: var(--raised);
-  color: var(--ink);
-  box-shadow: var(--shadow);
-  padding: 14px;
-  width: 300px;
-  max-width: calc(100vw - 16px);
-}
-h4 {
-  margin: 0 0 10px;
-  font: 600 11px var(--ui);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink2);
-}
 .r {
   display: grid;
   grid-template-columns: 74px 1fr 40px;
@@ -138,64 +97,10 @@ input[type="range"] {
   box-shadow: inset 0 0 0 1px var(--acc);
 }
 .segc {
-  display: inline-flex;
-  padding: 2px;
-  border-radius: var(--r2);
-  background: var(--bg);
-  border: 1px solid var(--line);
-  gap: 2px;
   justify-self: start;
 }
-.segc button {
-  height: 24px;
-  padding: 0 10px;
-  border-radius: var(--r1);
-  color: var(--ink2);
-  font-weight: 500;
-  font-size: 12px;
-}
-.segc button.on {
-  background: var(--raised);
-  color: var(--ink-hi);
-  box-shadow: 0 0 0 1px var(--line2);
-}
 .sw {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-weight: 500;
   font-size: 12px;
-  color: var(--ink);
-  cursor: pointer;
   margin-top: 4px;
-}
-.sw input {
-  appearance: none;
-  width: 30px;
-  height: 18px;
-  border-radius: 999px;
-  background: var(--line2);
-  position: relative;
-  cursor: pointer;
-  flex: none;
-  margin: 0;
-  transition: background 0.15s;
-}
-.sw input::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #fff;
-  transition: transform 0.15s;
-}
-.sw input:checked {
-  background: var(--acc);
-}
-.sw input:checked::after {
-  transform: translateX(12px);
 }
 </style>

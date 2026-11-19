@@ -1,5 +1,7 @@
 // Transient UI state and the toast. Nothing here is saved.
 import { reactive, watch } from "vue";
+import { useMediaQuery } from "@vueuse/core";
+import { device } from "./settings";
 
 export interface ToastAction {
   label: string;
@@ -20,8 +22,6 @@ export const ui = reactive({
   fixKey: false, // Settings opened from a 401: mark the key field
   currentId: null as string | null, // chapter shown in the reader (the engine plays this one)
   follow: true, // reader auto-scrolls to the current word
-  readingOpen: false, // Aa popover
-  shortcutsOpen: false,
   sidebarDrawer: false, // narrow-window overlay drawer
   toast: null as Toast | null,
   flashId: null as string | null, // chapter row to flash
@@ -35,6 +35,34 @@ watch(
   () => ui.currentId,
   () => (ui.follow = true),
 );
+
+/** Narrow window: the sidebar is an overlay drawer. */
+export const narrow = useMediaQuery("(max-width: 820px)");
+
+export function toggleSide() {
+  if (narrow.value) ui.sidebarDrawer = !ui.sidebarDrawer;
+  else device.sidebarOpen = !device.sidebarOpen;
+}
+
+export function openSettings(
+  tab: typeof ui.settingsTab,
+  providerId: string | null = null,
+  fixKey = false,
+) {
+  Object.assign(ui, { view: "settings", settingsTab: tab, openProviderId: providerId, fixKey });
+}
+export const toggleSettings = () => (ui.view = ui.view === "settings" ? "reader" : "settings");
+
+/** @beforetoggle handler: pin a popover to its popovertarget button, right edges aligned. */
+export function placePopover(e: Event, side: "above" | "below") {
+  const pop = e.target as HTMLElement;
+  const btn = document.querySelector(`[popovertarget="${pop.id}"]`);
+  if ((e as ToggleEvent).newState !== "open" || !btn) return;
+  const r = btn.getBoundingClientRect();
+  pop.style.right = Math.max(8, innerWidth - r.right) + "px";
+  if (side === "below") pop.style.top = r.bottom + 6 + "px";
+  else pop.style.bottom = innerHeight - r.top + 10 + "px";
+}
 
 /** Open a chapter's text in the editor (Reader pauses playback; saving re-segments in place). */
 export function edit(id: string) {

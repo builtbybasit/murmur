@@ -75,7 +75,7 @@ function restore() {
       >Try it<textarea v-model="sample" rows="2" spellcheck="false" aria-label="Sample text" />
     </label>
     <div class="out">
-      <small>Spoken as</small>
+      <small class="label dim">Spoken as</small>
       <span>{{ spoken || "(silence)" }}</span>
     </div>
   </div>
@@ -104,7 +104,9 @@ function restore() {
     <button class="btn" @click="add"><Plus :size="13" /> Add rule</button>
   </div>
   <div class="rules">
-    <div class="head"><span>Find</span><span>Speak as</span><span>Suffix</span><span /></div>
+    <div class="head label dim">
+      <span>Find</span><span>Speak as</span><span>Suffix</span><span />
+    </div>
     <div v-for="{ r, i } in shown" :key="i" class="rule">
       <input
         v-model="r.find"
@@ -138,31 +140,6 @@ function restore() {
 </template>
 
 <style scoped>
-h2 {
-  margin: 22px 0 6px;
-  font: 600 16px var(--ui);
-  color: var(--ink-hi);
-}
-h2:first-child {
-  margin-top: 0;
-}
-.hint {
-  margin: 0 0 12px;
-  color: var(--ink2);
-  max-width: 70ch;
-}
-.hint.tight {
-  margin-top: 4px;
-}
-.sw {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 500;
-}
-.sw input {
-  accent-color: var(--acc);
-}
 code {
   font: 11.5px var(--mono);
 }
@@ -181,8 +158,7 @@ code {
   color: var(--ink2);
 }
 textarea,
-.rule input,
-.filter {
+.rule input {
   border: 1px solid var(--line2);
   border-radius: var(--r2);
   background: var(--raised);
@@ -195,10 +171,6 @@ textarea {
 }
 .out small {
   display: block;
-  font: 600 10.5px var(--ui);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink3);
 }
 .out span {
   font: 13px/1.5 var(--ui);
@@ -211,26 +183,6 @@ textarea {
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
-}
-.filter {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 8px;
-  color: var(--ink3);
-  width: min(220px, 100%);
-}
-.filter input {
-  border: 0;
-  background: none;
-  outline: 0;
-  min-width: 0;
-  flex: 1;
-  height: 26px;
-  padding: 0;
-  font: 12px var(--mono);
-  color: var(--ink);
 }
 .rules {
   border: 1px solid var(--line);
@@ -267,7 +219,7 @@ textarea {
 .pill {
   height: 22px;
   padding: 0 8px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   border: 1px dashed var(--line2);
   font: 11px var(--mono);
   color: var(--ink3);
@@ -293,10 +245,6 @@ textarea {
   top: -8px;
   padding: 4px 0;
   background: var(--surface);
-  font: 600 10.5px var(--ui);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink3);
 }
 .rule input {
   height: 28px;
@@ -309,8 +257,6 @@ textarea {
   height: 24px;
 }
 small.h {
-  color: var(--ink3);
-  font-size: 11.5px;
   padding: 6px 2px;
 }
 </style>

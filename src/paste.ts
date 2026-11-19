@@ -2,6 +2,7 @@
 import { addChapter, docOf, isShort, undo } from "./library";
 import { toast, ui } from "./ui";
 import { htmlToMarkdown } from "./lib/markdown";
+import { MOD } from "./lib/format";
 
 /** Web pages put HTML on the clipboard too: keep its bold, italics, tables and scene breaks. */
 export function addFromText(text: string | null | undefined, html?: string | null) {
@@ -32,7 +33,7 @@ export async function pasteFromClipboard() {
       item?.types.includes(t) ? (await item.getType(t)).text() : null;
     addFromText(await get("text/plain"), await get("text/html"));
   } catch {
-    toast({ title: "The browser blocked clipboard access", sub: "Press ⌘V instead" });
+    toast({ title: "The browser blocked clipboard access", sub: `Press ${MOD}V instead` });
   }
 }
 

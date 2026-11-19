@@ -3,21 +3,15 @@
 import { computed, ref } from "vue";
 import { renderSVG } from "uqr";
 import { getJson } from "../lib/server";
-import { toast } from "../ui";
+import { placePopover, toast } from "../ui";
 
-const el = ref<HTMLElement>();
 const links = ref<string[]>([]);
 const link = computed(() => links.value[0] ?? "");
 const svg = computed(() => (link.value ? renderSVG(link.value, { border: 2 }) : ""));
 
 async function onToggle(e: Event) {
+  placePopover(e, "below");
   if ((e as ToggleEvent).newState !== "open") return;
-  const btn = document.querySelector('[popovertarget="phone"]');
-  if (btn && el.value) {
-    const b = btn.getBoundingClientRect();
-    el.value.style.right = Math.max(8, innerWidth - b.right) + "px";
-    el.value.style.top = b.bottom + 6 + "px";
-  }
   links.value = await getJson<{ links: string[] }>("phone").then(
     (j) => j.links,
     () => [],
@@ -30,7 +24,7 @@ async function copy() {
 </script>
 
 <template>
-  <div id="phone" ref="el" popover class="pop" @beforetoggle="onToggle">
+  <div id="phone" popover class="pop" @beforetoggle="onToggle">
     <h4>Listen on your phone</h4>
     <template v-if="link">
       <div class="qr" v-html="svg" />
@@ -57,24 +51,7 @@ async function copy() {
 
 <style scoped>
 .pop {
-  margin: 0;
-  inset: auto;
-  position: fixed;
-  border: 1px solid var(--line2);
-  border-radius: var(--r3);
-  background: var(--raised);
-  color: var(--ink);
-  box-shadow: var(--shadow);
-  padding: 14px;
   width: 280px;
-  max-width: calc(100vw - 16px);
-}
-h4 {
-  margin: 0 0 10px;
-  font: 600 11px var(--ui);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink2);
 }
 .qr {
   width: 180px;
@@ -100,11 +77,6 @@ ol {
   margin: 0;
   font-size: 11.5px;
   color: var(--ink3);
-}
-.lnk {
-  font: inherit;
-  color: var(--acc);
-  padding: 0;
 }
 code {
   font: 11px var(--mono);

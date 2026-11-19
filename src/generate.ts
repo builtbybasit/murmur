@@ -26,19 +26,29 @@ let running: { id: string; ac: AbortController } | null = null;
 export const genState = (c: Chapter): GenJob["state"] | "done" | null =>
   generating[c.id]?.state ?? (readyMarks.value[c.id] === audioSig.value ? "done" : null);
 
+const active = (id: string) =>
+  generating[id]?.state === "queued" || generating[id]?.state === "running";
+
+function stop(id: string) {
+  const q = queue.indexOf(id);
+  if (q >= 0) queue.splice(q, 1);
+  if (running?.id === id) running.ac.abort();
+  delete generating[id];
+}
+
 /** Start (or queue) generating a chapter's audio; on a queued/running chapter, stop it. */
 export function toggleGenerate(id: string) {
-  const j = generating[id];
-  if (j?.state === "queued" || j?.state === "running") {
-    const q = queue.indexOf(id);
-    if (q >= 0) queue.splice(q, 1);
-    if (running?.id === id) running.ac.abort();
-    delete generating[id];
-    return;
-  }
+  if (active(id)) return stop(id);
   generating[id] = { state: "queued", done: 0, total: 0, error: "" };
   queue.push(id);
   void genLoop();
+}
+
+/** Queue several chapters in order, skipping ones already queued or running; returns how many. */
+export function generateMany(ids: string[]) {
+  const todo = ids.filter((id) => !active(id));
+  for (const id of todo) toggleGenerate(id);
+  return todo.length;
 }
 
 // Voices or spoken text changed: the running chapter starts over with the new keys.
@@ -50,12 +60,15 @@ watch(audioSig, () => {
   queue.unshift(id);
 });
 // Changed text (here or on another device): some segments need audio again.
+// Deleted chapters: their jobs stop.
 watch(
   () => library.chapters.map((c) => [c.id, c.body] as const),
   (now, old) => {
     const was = new Map(old);
     for (const [id, body] of now)
       if (was.has(id) && was.get(id) !== body) delete readyMarks.value[id];
+    const ids = new Set(now.map(([id]) => id));
+    for (const id in generating) if (!ids.has(id)) stop(id);
   },
 );
 

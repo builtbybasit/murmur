@@ -5,6 +5,7 @@ import { computed, reactive, watch } from "vue";
 import { settings, voiceFor, hasTts, type Provider } from "./settings";
 import { library, currentDoc, docOf, setPosition, CHARS_PER_SEC } from "./library";
 import { ui, toast } from "./ui";
+import { MOD } from "./lib/format";
 import type { Doc } from "./lib/segment";
 import { MAX_RETRIES, retryDelay, toError, type ErrorCode, type ProviderError } from "./lib/api";
 import { alignWords, estimateTimes, type Span } from "./lib/align";
@@ -540,7 +541,7 @@ function advance() {
   ended = true;
   savePos();
   refreshStatus();
-  toast({ title: "End of the list", sub: "Paste the next chapter with ⌘V to keep listening" });
+  toast({ title: "End of the list", sub: `Paste the next chapter with ${MOD}V to keep listening` });
 }
 
 // ---------- STT ----------

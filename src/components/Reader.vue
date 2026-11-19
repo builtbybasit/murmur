@@ -1,9 +1,11 @@
 <script setup lang="ts">
 // Reading view. The chapter text is rendered once per doc as an HTML string (30k word spans
 // would be too heavy as reactive vnodes); highlight classes are moved imperatively in paint().
-import { computed, ref, watch, nextTick, onMounted, onBeforeUnmount } from "vue";
+import { computed, ref, watch, nextTick, onMounted } from "vue";
+import { useEventListener, useMediaQuery } from "@vueuse/core";
 import { settings, device } from "../settings";
 import { current, currentDoc, library, setChapterBody, CHARS_PER_SEC } from "../library";
+import { MOD, minutes } from "../lib/format";
 import { ui, toast } from "../ui";
 import { docHtml } from "../lib/render";
 import { player, seek, pause, nextChapter, upNext } from "../engine";
@@ -55,7 +57,7 @@ function onEditKey(e: KeyboardEvent) {
 
 // ---------- meta + end card ----------
 const totalSec = computed(() => player.total || (doc.value ? doc.value.chars / CHARS_PER_SEC : 0));
-const mins = computed(() => Math.max(1, Math.round(totalSec.value / settings.speed / 60)));
+const mins = computed(() => minutes(totalSec.value, settings.speed));
 const cached = computed(() => {
   const n = player.cachedCount,
     all = doc.value?.segs.length ?? 0;
@@ -159,7 +161,7 @@ watch(
 watch(badList, paintBad, { flush: "post" });
 
 // ---------- follow ----------
-const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const reduced = useMediaQuery("(prefers-reduced-motion: reduce)");
 
 /** Keep the current word between 12% and 72% of the view; when it leaves, put it at 30%. */
 function reveal(instant = false) {
@@ -171,7 +173,7 @@ function reveal(instant = false) {
     y = r.top - b.top;
   if (y >= b.height * 0.12 && r.bottom - b.top <= b.height * 0.72) return;
   const d = y - b.height * 0.3;
-  const jump = instant || reduced || Math.abs(d) > b.height * 1.5;
+  const jump = instant || reduced.value || Math.abs(d) > b.height * 1.5;
   sc.scrollTo({ top: sc.scrollTop + d, behavior: jump ? "auto" : "smooth" });
 }
 
@@ -198,17 +200,13 @@ function onMouseDown(e: MouseEvent) {
   if (sc && e.target === sc && e.offsetX >= sc.clientWidth) unfollow(); // scrollbar drag
 }
 const SCROLL_KEYS = new Set(["PageUp", "PageDown", "Home", "End", "ArrowUp", "ArrowDown"]);
-function onKey(e: KeyboardEvent) {
+useEventListener(window, "keydown", (e: KeyboardEvent) => {
   const t = e.target as HTMLElement | null;
   if (ui.view !== "reader" || !SCROLL_KEYS.has(e.key) || e.metaKey || e.ctrlKey) return;
   if (t?.closest?.("input,textarea,select,[contenteditable],.row")) return;
   unfollow();
-}
-onMounted(() => {
-  window.addEventListener("keydown", onKey);
-  onDoc();
 });
-onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
+onMounted(onDoc);
 
 function backToCurrent() {
   ui.follow = true;
@@ -276,21 +274,27 @@ function onClick(e: MouseEvent) {
             >
             <span class="sp" />
             <button class="btn ghost" @click="ui.editingId = null">Cancel <kbd>Esc</kbd></button>
-            <button class="btn pri" @click="saveEdit">Save <kbd>⌘↵</kbd></button>
+            <button class="btn pri" @click="saveEdit">Save <kbd>{{ MOD }}↵</kbd></button>
           </div>
         </div>
         <!-- v-show, not v-if: paint() keeps references into this element -->
-        <div v-show="!editing" ref="textEl" class="text" @click="onClick" v-html="html" />
+        <div v-show="!editing" ref="textEl" class="chapter" @click="onClick" v-html="html" />
         <template v-if="editing" />
         <button v-else-if="upNext" class="endcard" @click="nextChapter()">
-          <span><small>Up next · plays automatically</small><b>{{ upNext.title }}</b></span>
+          <span
+            ><small class="label dim">Up next · plays automatically</small
+            ><b>{{ upNext.title }}</b></span
+          >
           <span class="sp" />
           <kbd>J</kbd>
         </button>
         <div v-else class="endcard">
-          <span><small>End of the list</small><b>Paste the next chapter to keep listening</b></span>
+          <span
+            ><small class="label dim">End of the list</small
+            ><b>Paste the next chapter to keep listening</b></span
+          >
           <span class="sp" />
-          <kbd>⌘V</kbd>
+          <kbd>{{ MOD }}V</kbd>
         </div>
       </article>
     </section>
@@ -373,187 +377,9 @@ function onClick(e: MouseEvent) {
   gap: 4px 10px;
   align-items: center;
 }
-.lnk {
-  font: inherit;
-  color: var(--acc);
-  padding: 0;
-}
-.lnk:hover {
-  text-decoration: underline;
-}
 .meta b {
   font-weight: 500;
   color: var(--ink2);
-}
-
-.text :deep(p) {
-  margin: 0 0 0.85em;
-  position: relative;
-  text-wrap: pretty;
-  hanging-punctuation: first;
-}
-.text :deep(p.hd) {
-  margin-top: 1.3em;
-  font-size: 1.15em;
-  font-weight: 700;
-  color: var(--ink-hi);
-}
-.text :deep(p.fig) {
-  margin: 1.4em 0;
-  text-align: center;
-}
-.text :deep(p.fig .seg) {
-  display: inline-block;
-  padding: 4px;
-  border-radius: var(--r3);
-  cursor: pointer;
-}
-.text :deep(p.fig img) {
-  display: block;
-  max-width: 100%;
-  max-height: 70vh;
-  border-radius: var(--r2);
-}
-.text :deep(p.fig .seg.cur) {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--k) 45%, transparent);
-}
-.text :deep(p.ctr) {
-  text-align: center;
-}
-.text :deep(p.li) {
-  padding-left: 1.6em;
-}
-.text :deep(p.li)::after {
-  content: attr(data-n);
-  position: absolute;
-  left: 0.2em;
-  top: 0;
-  color: var(--ink3);
-}
-.text :deep(blockquote) {
-  margin: 0 0 0.85em;
-  padding: 0.7em 1em 0.1em;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--line2);
-  border-radius: var(--r2);
-  background: var(--surface);
-}
-.text :deep(hr) {
-  width: 30%;
-  margin: 1.8em auto;
-  border: 0;
-  border-top: 1px solid var(--line2);
-}
-.text :deep(table) {
-  margin: 0 0 1em;
-  border-collapse: collapse;
-  font-size: 0.92em;
-}
-.text :deep(td),
-.text :deep(th) {
-  padding: 0.25em 0.8em;
-  border: 1px solid var(--line);
-  text-align: left;
-  vertical-align: top;
-}
-.text :deep(th) {
-  background: var(--surface);
-}
-.text :deep(.w.b),
-.text :deep(th .w) {
-  font-weight: 700;
-}
-.text :deep(.w.i) {
-  font-style: italic;
-}
-.text :deep(.w.s) {
-  text-decoration: line-through;
-}
-.text :deep(.w.c) {
-  font-family: var(--mono);
-  font-size: 0.9em;
-}
-.text :deep(p.curp)::before {
-  content: "";
-  position: absolute;
-  left: -18px;
-  top: 0.4em;
-  bottom: 0.4em;
-  width: 2px;
-  border-radius: 2px;
-  background: var(--line2);
-}
-.text :deep(.seg) {
-  --k: var(--acc);
-  border-radius: 3px;
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
-  transition: background-color 0.18s;
-}
-.text :deep(.seg.dlg) {
-  --k: var(--dlg);
-}
-.text :deep(.seg.sys) {
-  --k: var(--sys);
-}
-.tint .text :deep(.seg.dlg) {
-  color: color-mix(in oklab, var(--ink) 62%, var(--dlg));
-}
-.text :deep(.seg.cur) {
-  color: var(--ink-hi);
-  background: color-mix(in srgb, var(--k) 11%, transparent);
-  box-shadow: 0 0 0 0.13em color-mix(in srgb, var(--k) 11%, transparent);
-}
-.tint .text :deep(.seg.dlg.cur) {
-  color: color-mix(in oklab, var(--ink-hi) 70%, var(--dlg));
-}
-.text :deep(.seg.wait) {
-  background: linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--k) 6%, transparent) 20%,
-      color-mix(in srgb, var(--k) 26%, transparent) 50%,
-      color-mix(in srgb, var(--k) 6%, transparent) 80%
-    )
-    0 0 / 250% 100%;
-  box-shadow: none;
-  animation: sheen 1.3s linear infinite;
-}
-@keyframes sheen {
-  from {
-    background-position: 100% 0;
-  }
-  to {
-    background-position: -150% 0;
-  }
-}
-.text :deep(.seg.bad) {
-  --k: var(--err);
-  text-decoration-line: underline;
-  text-decoration-style: wavy;
-  text-decoration-color: var(--err);
-  text-decoration-thickness: 1px;
-  text-underline-offset: 0.32em;
-}
-.text :deep(.w) {
-  border-radius: 3px;
-  cursor: pointer;
-}
-.text :deep(.w:hover) {
-  background: color-mix(in srgb, var(--k) 16%, transparent);
-}
-.text :deep(.w.now) {
-  background: color-mix(in srgb, var(--k) 26%, transparent);
-  box-shadow: 0 0 0 0.13em color-mix(in srgb, var(--k) 26%, transparent);
-  color: var(--ink-hi);
-}
-.text :deep(.w.now.al) {
-  background: color-mix(in srgb, var(--k) 36%, transparent);
-  box-shadow: 0 0 0 0.13em color-mix(in srgb, var(--k) 36%, transparent);
-  text-decoration-line: underline;
-  text-decoration-style: solid;
-  text-decoration-color: var(--k);
-  text-decoration-thickness: 2px;
-  text-underline-offset: 0.3em;
 }
 
 .endcard {
@@ -580,12 +406,6 @@ button.endcard:hover {
   font-weight: 500;
   font-size: 14px;
 }
-.endcard small {
-  font: 600 10.5px var(--ui);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink3);
-}
 
 .follow {
   position: absolute;
@@ -597,7 +417,7 @@ button.endcard:hover {
   display: flex;
   align-items: center;
   gap: 8px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--raised);
   border: 1px solid var(--line2);
   box-shadow: var(--shadow);
@@ -611,7 +431,182 @@ button.endcard:hover {
   .page {
     padding: 28px 20px 120px;
   }
-  .text :deep(p.curp)::before {
+}
+</style>
+
+<style>
+/* the chapter text is v-html, so it is styled unscoped, under .chapter */
+@keyframes sheen {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+.chapter p {
+  margin: 0 0 0.85em;
+  position: relative;
+  text-wrap: pretty;
+  hanging-punctuation: first;
+}
+.chapter p.hd {
+  margin-top: 1.3em;
+  font-size: 1.15em;
+  font-weight: 700;
+  color: var(--ink-hi);
+}
+.chapter p.fig {
+  margin: 1.4em 0;
+  text-align: center;
+}
+.chapter p.fig .seg {
+  display: inline-block;
+  padding: 4px;
+  border-radius: var(--r3);
+  cursor: pointer;
+}
+.chapter p.fig img {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  border-radius: var(--r2);
+}
+.chapter p.fig .seg.cur {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--k) 45%, transparent);
+}
+.chapter p.ctr {
+  text-align: center;
+}
+.chapter p.li {
+  padding-left: 1.6em;
+}
+.chapter p.li::after {
+  content: attr(data-n);
+  position: absolute;
+  left: 0.2em;
+  top: 0;
+  color: var(--ink3);
+}
+.chapter blockquote {
+  margin: 0 0 0.85em;
+  padding: 0.7em 1em 0.1em;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line2);
+  border-radius: var(--r2);
+  background: var(--surface);
+}
+.chapter hr {
+  width: 30%;
+  margin: 1.8em auto;
+  border: 0;
+  border-top: 1px solid var(--line2);
+}
+.chapter table {
+  margin: 0 0 1em;
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+.chapter td,
+.chapter th {
+  padding: 0.25em 0.8em;
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+.chapter th {
+  background: var(--surface);
+}
+.chapter .w.b,
+.chapter th .w {
+  font-weight: 700;
+}
+.chapter .w.i {
+  font-style: italic;
+}
+.chapter .w.s {
+  text-decoration: line-through;
+}
+.chapter .w.c {
+  font-family: var(--mono);
+  font-size: 0.9em;
+}
+.chapter p.curp::before {
+  content: "";
+  position: absolute;
+  left: -18px;
+  top: 0.4em;
+  bottom: 0.4em;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--line2);
+}
+.chapter .seg {
+  --k: var(--acc);
+  border-radius: 3px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  transition: background-color 0.18s;
+}
+.chapter .seg.dlg {
+  --k: var(--dlg);
+}
+.chapter .seg.sys {
+  --k: var(--sys);
+}
+.tint .chapter .seg.dlg {
+  color: color-mix(in oklab, var(--ink) 62%, var(--dlg));
+}
+.chapter .seg.cur {
+  color: var(--ink-hi);
+  background: color-mix(in srgb, var(--k) 11%, transparent);
+  box-shadow: 0 0 0 0.13em color-mix(in srgb, var(--k) 11%, transparent);
+}
+.tint .chapter .seg.dlg.cur {
+  color: color-mix(in oklab, var(--ink-hi) 70%, var(--dlg));
+}
+.chapter .seg.wait {
+  background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--k) 6%, transparent) 20%,
+      color-mix(in srgb, var(--k) 26%, transparent) 50%,
+      color-mix(in srgb, var(--k) 6%, transparent) 80%
+    )
+    0 0 / 250% 100%;
+  box-shadow: none;
+  animation: sheen 1.3s linear infinite;
+}
+.chapter .seg.bad {
+  --k: var(--err);
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-color: var(--err);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.32em;
+}
+.chapter .w {
+  border-radius: 3px;
+  cursor: pointer;
+}
+.chapter .w:hover {
+  background: color-mix(in srgb, var(--k) 16%, transparent);
+}
+.chapter .w.now {
+  background: color-mix(in srgb, var(--k) 26%, transparent);
+  box-shadow: 0 0 0 0.13em color-mix(in srgb, var(--k) 26%, transparent);
+  color: var(--ink-hi);
+}
+.chapter .w.now.al {
+  background: color-mix(in srgb, var(--k) 36%, transparent);
+  box-shadow: 0 0 0 0.13em color-mix(in srgb, var(--k) 36%, transparent);
+  text-decoration-line: underline;
+  text-decoration-style: solid;
+  text-decoration-color: var(--k);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.3em;
+}
+@media (max-width: 820px) {
+  .chapter p.curp::before {
     left: -11px;
   }
 }

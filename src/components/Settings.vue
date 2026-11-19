@@ -21,6 +21,7 @@ import { sync } from "../lib/server";
 import { saveSettings } from "../sync";
 import { testConnection, fetchVoices } from "../lib/api";
 import { segmentPara } from "../lib/segment";
+import { bytes, plural } from "../lib/format";
 import VoicePicker from "./VoicePicker.vue";
 import SpeechRules from "./SpeechRules.vue";
 
@@ -176,8 +177,7 @@ function setPrefetch(e: Event) {
 const perBook = ref<Awaited<ReturnType<typeof storageByBook>> | null>(null);
 const imgs = ref<Awaited<ReturnType<typeof unusedImages>> | null>(null);
 const loadStats = async () => {
-  perBook.value = await storageByBook();
-  imgs.value = await unusedImages();
+  [perBook.value, imgs.value] = await Promise.all([storageByBook(), unusedImages()]);
 };
 /** Everything in the audio cache. */
 const stats = computed(() => {
@@ -189,48 +189,36 @@ const stats = computed(() => {
     bytes: sum((b) => b.bytes) + p.other.bytes,
   };
 });
-async function clearBook(b: BookStorage) {
-  await dropAudio(b.keys, b.book);
-  await loadStats();
-  toast({ title: `Cleared audio for ${b.book || "loose chapters"}`, sub: size(b.bytes) }, 3000);
-}
-async function clearOther() {
-  const o = perBook.value!.other;
-  await dropAudio(o.keys);
-  await loadStats();
-  toast({ title: "Removed audio nothing plays any more", sub: size(o.bytes) }, 3000);
-}
-async function clearImages() {
-  const n = imgs.value!.count;
-  await removeUnusedImages();
-  await loadStats();
-  toast({ title: `Removed ${n} unused image${n === 1 ? "" : "s"}` }, 3000);
-}
 watch(
   () => ui.settingsTab,
   (t) => t === "storage" && loadStats(),
   { immediate: true },
 );
-function size(b: number) {
-  const u = ["B", "KB", "MB", "GB"];
-  let i = 0;
-  while (b >= 1024 && i < u.length - 1) {
-    b /= 1024;
-    i++;
-  }
-  return `${b.toFixed(i ? 1 : 0)} ${u[i]}`;
-}
-async function clear() {
-  await clearCache();
+async function cleared(work: Promise<unknown>, title: string, sub?: string) {
+  await work;
   await loadStats();
-  toast({ title: "Cache cleared", sub: "Audio is generated again the next time you play." });
+  toast({ title, sub }, 3000);
 }
+const clearBook = (b: BookStorage) =>
+  cleared(
+    dropAudio(b.keys, b.book),
+    `Cleared audio for ${b.book || "loose chapters"}`,
+    bytes(b.bytes),
+  );
+function clearOther() {
+  const o = perBook.value!.other;
+  return cleared(dropAudio(o.keys), "Removed audio nothing plays any more", bytes(o.bytes));
+}
+const clearImages = () =>
+  cleared(removeUnusedImages(), `Removed ${plural(imgs.value!.count, "unused image")}`);
+const clear = () =>
+  cleared(clearCache(), "Cache cleared", "Audio is generated again the next time you play.");
 </script>
 
 <template>
   <section class="set">
     <nav class="set-nav">
-      <h1>Settings</h1>
+      <h1 class="label">Settings</h1>
       <button
         v-for="[k, l] in TABS"
         :key="k"
@@ -464,7 +452,7 @@ async function clear() {
           ><input v-model="settings.stt.enabled" type="checkbox" /> Align the highlight with
           speech-to-text</label
         >
-        <p class="hint tight2">
+        <p class="hint tight">
           Runs in the background for each segment after its audio arrives. Until the transcript is
           back, or when it fails, the highlight is estimated from character positions and playback
           carries on.
@@ -561,7 +549,7 @@ async function clear() {
             <span>Audio cache</span>
             <span
               >{{
-                stats ? `${stats.segments.toLocaleString()} segments · ${size(stats.bytes)}` : "…"
+                stats ? `${stats.segments.toLocaleString()} segments · ${bytes(stats.bytes)}` : "…"
               }}<br /><small class="h"
                 >Keyed by provider, model, voice and text. Replaying costs nothing.</small
               ></span
@@ -577,17 +565,14 @@ async function clear() {
             >
             <span />
             <span>Chapters</span>
-            <span
-              >{{ library.chapters.length }}
-              {{ library.chapters.length === 1 ? "chapter" : "chapters" }}</span
-            >
+            <span>{{ plural(library.chapters.length, "chapter") }}</span>
             <span />
             <span>Images</span>
             <span
               >{{ imgs ? `${imgs.total} from imported books` : "…" }}<br /><small
                 v-if="imgs?.count"
                 class="h"
-                >{{ imgs.count }} no longer used by any chapter ({{ size(imgs.bytes) }})</small
+                >{{ imgs.count }} no longer used by any chapter ({{ bytes(imgs.bytes) }})</small
               ></span
             >
             <button v-if="imgs?.count" class="btn" @click="clearImages">Remove unused</button>
@@ -612,17 +597,16 @@ async function clear() {
             <template v-for="b in perBook.books" :key="b.book">
               <span>{{ b.book || "Loose chapters" }}</span>
               <span
-                >{{ size(b.bytes) }}<br /><small class="h"
-                  >{{ b.chapters }} {{ b.chapters === 1 ? "chapter" : "chapters" }} ·
-                  {{ b.cached.toLocaleString() }} of {{ b.segments.toLocaleString() }} segments
-                  cached</small
+                >{{ bytes(b.bytes) }}<br /><small class="h"
+                  >{{ plural(b.chapters, "chapter") }} · {{ b.cached.toLocaleString() }} of
+                  {{ b.segments.toLocaleString() }} segments cached</small
                 ></span
               >
               <button class="btn" :disabled="!b.cached" @click="clearBook(b)">Clear</button>
             </template>
             <span>Other audio</span>
             <span
-              >{{ size(perBook.other.bytes) }}<br /><small class="h"
+              >{{ bytes(perBook.other.bytes) }}<br /><small class="h"
                 >{{ perBook.other.segments.toLocaleString() }} segments from old voices, old
                 spoken-text rules or deleted chapters. Nothing in your library plays them.</small
               ></span
@@ -646,6 +630,9 @@ async function clear() {
   height: 100%;
   overflow: auto;
 }
+.set-nav .label {
+  margin: 0 8px 8px;
+}
 .set-nav {
   padding: 18px 8px;
   border-right: 1px solid var(--line);
@@ -655,13 +642,6 @@ async function clear() {
   position: sticky;
   top: 0;
   align-self: start;
-}
-.set-nav h1 {
-  font: 600 11px var(--ui);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink2);
-  margin: 0 8px 8px;
 }
 .set-nav button {
   height: 30px;
@@ -675,7 +655,7 @@ async function clear() {
   background: var(--hover);
 }
 .set-nav button.on {
-  background: color-mix(in srgb, var(--acc) 13%, transparent);
+  background: var(--acc-bg);
   color: var(--ink-hi);
 }
 .set-nav .back {
@@ -689,94 +669,6 @@ async function clear() {
 .set-body {
   padding: 24px 28px 80px;
   max-width: 760px;
-}
-.set-body h2 {
-  font: 600 16px var(--ui);
-  color: var(--ink-hi);
-  margin: 0 0 4px;
-}
-.set-body h2:not(:first-child) {
-  margin-top: 30px;
-}
-.hint {
-  color: var(--ink2);
-  margin: 0 0 14px;
-  max-width: 64ch;
-}
-.hint.tight {
-  margin: 6px 0 0;
-}
-.hint.tight2 {
-  margin: 6px 0 10px;
-}
-.muted {
-  color: var(--ink2);
-}
-
-.f {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 10px 12px;
-}
-.f label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font: 500 11.5px var(--ui);
-  color: var(--ink2);
-}
-.f .wide {
-  grid-column: 1/-1;
-}
-.f small,
-small.h {
-  font-weight: 400;
-  color: var(--ink3);
-  font-size: 11.5px;
-  line-height: 1.4;
-}
-.f small.err {
-  color: var(--err);
-}
-input[type="text"],
-input[type="password"],
-input[type="number"],
-input[type="url"],
-select,
-textarea {
-  height: 30px;
-  padding: 0 8px;
-  border: 1px solid var(--line2);
-  border-radius: var(--r2);
-  background: var(--raised);
-  font-size: 13px;
-  min-width: 0;
-  width: 100%;
-}
-textarea {
-  height: auto;
-  padding: 6px 8px;
-  font: 12px/1.5 var(--mono);
-  resize: vertical;
-}
-input.monoi {
-  font: 12px var(--mono);
-}
-input.bad {
-  border-color: var(--err);
-}
-input:focus,
-select:focus,
-textarea:focus {
-  outline: 2px solid color-mix(in srgb, var(--acc) 55%, transparent);
-  outline-offset: 0;
-  border-color: var(--acc);
-}
-input:disabled,
-select:disabled,
-.btn:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 
 .prov {
@@ -817,7 +709,7 @@ select:disabled,
 .tag {
   font: 500 10.5px var(--ui);
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   border: 1px solid var(--line2);
   color: var(--ink2);
   white-space: nowrap;
@@ -838,46 +730,7 @@ select:disabled,
   padding: 12px;
   border-top: 1px solid var(--line);
 }
-.acts-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  margin-top: 12px;
-}
-.res {
-  font-size: 12px;
-  color: var(--ink2);
-}
-.res.ok {
-  color: var(--ok);
-}
-.res.bad {
-  color: var(--err);
-}
 
-.box {
-  --c: var(--acc);
-  border: 1px solid var(--line);
-  border-radius: var(--r3);
-  background: var(--surface);
-  padding: 14px;
-  margin-bottom: 10px;
-}
-.box.dlg {
-  --c: var(--dlg);
-}
-.box.sys {
-  --c: var(--sys);
-}
-.box h3 {
-  margin: 0 0 10px;
-  font: 600 13px var(--ui);
-  color: var(--ink-hi);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
 .gaps {
   display: grid;
   gap: 8px;
@@ -909,72 +762,13 @@ select:disabled,
     grid-column: 1/-1;
   }
 }
-.segc {
-  display: inline-flex;
-  padding: 2px;
-  border-radius: var(--r2);
-  background: var(--bg);
-  border: 1px solid var(--line);
-  gap: 2px;
-}
-.segc button {
-  height: 24px;
-  padding: 0 10px;
-  border-radius: var(--r1);
-  color: var(--ink2);
-  font-weight: 500;
-  font-size: 12px;
-}
-.segc button.on {
-  background: var(--raised);
-  color: var(--ink-hi);
-  box-shadow: 0 0 0 1px var(--line2);
-}
 
-.sw {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-weight: 500;
-  color: var(--ink);
-  cursor: pointer;
-}
-.sw input {
-  appearance: none;
-  width: 30px;
-  height: 18px;
-  border-radius: 999px;
-  background: var(--line2);
-  position: relative;
-  cursor: pointer;
-  flex: none;
-  margin: 0;
-  transition: background 0.15s;
-}
-.sw input::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #fff;
-  transition: transform 0.15s;
-}
-.sw input:checked {
-  background: var(--acc);
-}
-.sw input:checked::after {
-  transform: translateX(12px);
-}
 .prev {
   font: 17px/1.7 var(--read);
   padding: 12px 14px;
   border-radius: var(--r2);
   background: var(--bg);
   border: 1px solid var(--line);
-  margin: 10px 0 0;
 }
 .prev .seg {
   padding: 0.1em 0;
@@ -1014,7 +808,7 @@ select:disabled,
     border-bottom: 1px solid var(--line);
     padding: 8px;
   }
-  .set-nav h1 {
+  .set-nav .label {
     display: none;
   }
   .set-nav .back {

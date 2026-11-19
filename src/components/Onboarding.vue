@@ -2,7 +2,8 @@
 import { reactive, ref } from "vue";
 import { Check } from "@lucide/vue";
 import { PRESETS, addProvider, hasTts, settings, type PresetKey } from "../settings";
-import { toast, ui } from "../ui";
+import { openSettings, toast } from "../ui";
+import { MOD } from "../lib/format";
 import { testConnection } from "../lib/api";
 import { pasteFromClipboard } from "../paste";
 
@@ -53,11 +54,6 @@ async function save() {
     sub: v ? `Narration uses ${v}. Change it in Settings.` : "Set a narration voice in Settings.",
   });
 }
-
-function openSettings() {
-  ui.settingsTab = "providers";
-  ui.view = "settings";
-}
 </script>
 
 <template>
@@ -85,7 +81,7 @@ function openSettings() {
               {{ settings.providers.map((p) => p.name).join(", ") }} connected. Voices and more
               providers are in Settings.
             </p>
-            <button class="btn" @click="openSettings">Open settings</button>
+            <button class="btn" @click="openSettings('providers')">Open settings</button>
           </template>
           <form v-else @submit.prevent="save">
             <p>
@@ -135,8 +131,8 @@ function openSettings() {
             the next.
           </p>
           <div class="pz">
-            <strong>Press <kbd>⌘V</kbd> anywhere</strong>No dialog, no text box. The chapter is
-            added and you can paste the next one straight away.
+            <strong>Press <kbd>{{ MOD }}V</kbd> anywhere</strong>No dialog, no text box. The chapter
+            is added and you can paste the next one straight away.
             <div class="pz-b">
               <button class="btn" @click="pasteFromClipboard">Paste from clipboard</button>
             </div>
@@ -232,77 +228,7 @@ function openSettings() {
 }
 
 .segc {
-  display: inline-flex;
-  padding: 2px;
-  border-radius: var(--r2);
-  background: var(--bg);
-  border: 1px solid var(--line);
-  gap: 2px;
   margin-bottom: 10px;
-}
-.segc button {
-  height: 24px;
-  padding: 0 10px;
-  border-radius: var(--r1);
-  color: var(--ink2);
-  font-weight: 500;
-  font-size: 12px;
-}
-.segc button.on {
-  background: var(--raised);
-  color: var(--ink-hi);
-  box-shadow: 0 0 0 1px var(--line2);
-}
-.f {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 10px 12px;
-}
-.f label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font: 500 11.5px var(--ui);
-  color: var(--ink2);
-}
-.f .wide {
-  grid-column: 1/-1;
-}
-input {
-  height: 30px;
-  padding: 0 8px;
-  border: 1px solid var(--line2);
-  border-radius: var(--r2);
-  background: var(--raised);
-  font-size: 13px;
-  min-width: 0;
-  width: 100%;
-}
-input.monoi {
-  font: 12px var(--mono);
-}
-input:focus {
-  outline: 2px solid color-mix(in srgb, var(--acc) 55%, transparent);
-  outline-offset: 0;
-  border-color: var(--acc);
-}
-.acts-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  margin-top: 12px;
-}
-.btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-.res {
-  font-size: 12px;
-  color: var(--ink2);
-}
-.res.bad {
-  color: var(--err);
 }
 
 @media (max-width: 820px) {

@@ -3,12 +3,12 @@ import { PanelLeft, Keyboard, Settings, Smartphone } from "@lucide/vue";
 import ReadingPopover from "./ReadingPopover.vue";
 import PhonePopover from "./PhonePopover.vue";
 import { current } from "../library";
-import { ui } from "../ui";
+import { ui, toggleSettings, toggleSide } from "../ui";
+import { showShortcuts } from "../shortcuts";
+import { MOD } from "../lib/format";
 
 // the phone button belongs on the Mac, not on the phone itself
 const onMac = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
-
-defineEmits<{ side: [] }>();
 </script>
 
 <template>
@@ -18,7 +18,7 @@ defineEmits<{ side: [] }>();
       data-side-toggle
       title="Toggle chapters (B)"
       aria-label="Toggle chapter list"
-      @click="$emit('side')"
+      @click="toggleSide"
     >
       <PanelLeft :size="16" :stroke-width="1.5" />
     </button>
@@ -52,16 +52,11 @@ defineEmits<{ side: [] }>();
       class="ib"
       title="Keyboard shortcuts (?)"
       aria-label="Keyboard shortcuts"
-      @click="ui.shortcutsOpen = true"
+      @click="showShortcuts"
     >
       <Keyboard :size="16" :stroke-width="1.5" />
     </button>
-    <button
-      class="ib"
-      title="Settings (⌘,)"
-      aria-label="Settings"
-      @click="ui.view = ui.view === 'settings' ? 'reader' : 'settings'"
-    >
+    <button class="ib" :title="`Settings (${MOD},)`" aria-label="Settings" @click="toggleSettings">
       <Settings :size="16" :stroke-width="1.5" />
     </button>
     <ReadingPopover />

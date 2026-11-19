@@ -119,11 +119,6 @@ output {
   width: 24px;
   height: 24px;
 }
-.ib:disabled,
-.btn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
 .foot {
   display: flex;
   flex-wrap: wrap;

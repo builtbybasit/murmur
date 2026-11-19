@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, watch } from "vue";
-import { onClickOutside, onKeyStroke, useMediaQuery } from "@vueuse/core";
+import { onClickOutside, onKeyStroke } from "@vueuse/core";
 import {
   ChevronRight,
   CircleCheck,
@@ -25,25 +25,22 @@ import {
   setBook,
   type Chapter,
 } from "../library";
-import { ui, toast, edit } from "../ui";
+import { ui, toast, edit, narrow } from "../ui";
+import { MOD, minutes, plural, thousands } from "../lib/format";
 import { pasteFromClipboard, undoWithToast } from "../paste";
 import { player, open } from "../engine";
-import { generating, genState, toggleGenerate } from "../generate";
+import { generating, genState, generateMany, toggleGenerate } from "../generate";
 
-const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl+";
-const narrow = useMediaQuery("(max-width: 820px)");
 const side = ref<HTMLElement>();
 const list = ref<HTMLElement>();
 
-const kw = (n: number) => (n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n));
 const meta = computed(() => {
   const n = library.chapters.length;
   return n
-    ? `${n} · ${kw(library.chapters.reduce((s, c) => s + docOf(c).words, 0))} words`
+    ? `${n} · ${thousands(library.chapters.reduce((s, c) => s + docOf(c).words, 0))} words`
     : "none yet";
 });
-const mins = (c: Chapter) =>
-  Math.max(1, Math.round(docOf(c).chars / CHARS_PER_SEC / settings.speed / 60));
+const mins = (c: Chapter) => minutes(docOf(c).chars / CHARS_PER_SEC, settings.speed);
 const pct = (c: Chapter) => {
   const n = docOf(c).segs.length;
   return n ? Math.min(100, Math.round((100 * (library.positions[c.id] ?? 0)) / n)) : 0;
@@ -113,16 +110,13 @@ function toggleFold(b: string) {
     : [...settings.collapsed, b];
 }
 const dur = (secs: number) => {
-  const m = Math.max(1, Math.round(secs / settings.speed / 60));
+  const m = minutes(secs, settings.speed);
   return m < 60 ? m + "m" : `${Math.floor(m / 60)}h ${m % 60}m`;
 };
 const bookChapters = (h: Head) => library.chapters.filter((c) => h.ids.includes(c.id));
 function bookGenerate(h: Head) {
-  const list = bookChapters(h).filter(
-    (c) => generating[c.id]?.state !== "queued" && generating[c.id]?.state !== "running",
-  );
-  for (const c of list) toggleGenerate(c.id);
-  toast({ title: `Generating audio for ${list.length} chapters`, sub: h.book }, 3000);
+  const n = generateMany(h.ids);
+  toast({ title: `Generating audio for ${plural(n, "chapter")}`, sub: h.book }, 3000);
 }
 const renamingBook = ref<string | null>(null);
 watch(renamingBook, async (b) => {
@@ -176,15 +170,9 @@ onKeyStroke("Escape", () => sel.clear());
 const picked = () => library.chapters.filter((c) => sel.has(c.id));
 
 function bulkGenerate() {
-  const list = picked().filter(
-    (c) => generating[c.id]?.state !== "queued" && generating[c.id]?.state !== "running",
-  );
-  for (const c of list) toggleGenerate(c.id);
+  const n = generateMany(picked().map((c) => c.id));
   sel.clear();
-  toast(
-    { title: `Generating audio for ${list.length} chapter${list.length === 1 ? "" : "s"}` },
-    3000,
-  );
+  toast({ title: `Generating audio for ${plural(n, "chapter")}` }, 3000);
 }
 function bulkDelete() {
   removeChapters(picked());
@@ -244,11 +232,7 @@ function endRename(id: string, value: string | null) {
 
 function removeChapters(cs: Chapter[]) {
   if (!cs.length) return;
-  for (const c of cs) {
-    const s = generating[c.id]?.state;
-    if (s === "queued" || s === "running") toggleGenerate(c.id); // stop its background job
-  }
-  deleteChapters(cs.map((c) => c.id)); // moves ui.currentId on; the engine follows
+  deleteChapters(cs.map((c) => c.id)); // moves ui.currentId on; the engine follows; jobs stop
   toast({
     title: cs.length === 1 ? `Deleted “${cs[0]!.title}”` : `Deleted ${cs.length} chapters`,
     sub: "Cached audio is kept until you clear the cache.",
@@ -365,7 +349,7 @@ function pickEpub(e: Event) {
     :inert="narrow && !ui.sidebarDrawer"
     aria-label="Chapters"
   >
-    <div class="side-h"><span>Chapters</span><span class="num">{{ meta }}</span></div>
+    <div class="side-h label"><span>Chapters</span><span class="num">{{ meta }}</span></div>
     <ol ref="list" class="list" @drop="onDrop">
       <template v-for="it in items" :key="it.kind === 'head' ? it.key : it.c.id">
         <li
@@ -576,10 +560,6 @@ function pickEpub(e: Event) {
   align-items: baseline;
   justify-content: space-between;
   padding: 12px 12px 8px;
-  font: 600 11px var(--ui);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink2);
 }
 .side-h .num {
   text-transform: none;
@@ -642,7 +622,7 @@ function pickEpub(e: Event) {
   height: 24px;
 }
 .row.on {
-  background: color-mix(in srgb, var(--acc) 13%, transparent);
+  background: var(--acc-bg);
   color: var(--ink-hi);
 }
 .grip {
@@ -713,19 +693,12 @@ input.t {
 .book.fold .chev {
   transform: none;
 }
-.book .t {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .book input.t {
   font: inherit;
   color: var(--ink-hi);
   background: var(--raised);
   border: 1px solid var(--acc);
-  border-radius: var(--r1, 4px);
+  border-radius: var(--r1);
   padding: 2px 4px;
 }
 .book .m {

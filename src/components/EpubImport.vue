@@ -5,6 +5,7 @@ import { addChapters } from "../library";
 import { toast, ui } from "../ui";
 import { undoWithToast } from "../paste";
 import { openEpub, type Epub } from "../lib/epub";
+import { plural } from "../lib/format";
 
 const dlg = ref<HTMLDialogElement>();
 const book = shallowRef<Epub | null>(null); // epub-ts objects stay raw, not reactive proxies
@@ -63,7 +64,7 @@ async function run() {
   const added = addChapters(out, b.title.trim() || ui.epubFile?.name.replace(/\.epub$/i, ""));
   close();
   toast({
-    title: `Imported ${added.length} chapter${added.length === 1 ? "" : "s"}`,
+    title: `Imported ${plural(added.length, "chapter")}`,
     sub: b.title,
     actions: [{ label: "Undo", run: undoWithToast }],
   });
@@ -118,7 +119,7 @@ function close() {
           {{
             progress
               ? `Importing ${progress.done} of ${progress.total}…`
-              : `Import ${chosen} chapter${chosen === 1 ? "" : "s"}`
+              : `Import ${plural(chosen, "chapter")}`
           }}
         </button>
       </div>
@@ -127,27 +128,6 @@ function close() {
 </template>
 
 <style scoped>
-dialog {
-  border: 1px solid var(--line2);
-  border-radius: var(--r3);
-  background: var(--raised);
-  color: var(--ink);
-  box-shadow: var(--shadow);
-  padding: 18px 20px;
-  width: min(620px, calc(100vw - 24px));
-}
-dialog::backdrop {
-  background: rgba(5, 8, 12, 0.55);
-}
-h3 {
-  margin: 0 0 12px;
-  font: 600 15px var(--ui);
-  color: var(--ink-hi);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-}
 .t {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -200,9 +180,6 @@ h3 {
   font: 11.5px var(--mono);
   color: var(--ink3);
   white-space: nowrap;
-}
-.muted {
-  color: var(--ink2);
 }
 .small {
   font-size: 12px;

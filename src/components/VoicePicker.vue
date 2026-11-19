@@ -61,7 +61,7 @@ function useBlend(id: string) {
     />
 
     <div v-for="g in groups" :key="g.name" class="grp">
-      <small v-if="groups.length > 1">{{ g.name }}</small>
+      <small v-if="groups.length > 1" class="label dim">{{ g.name }}</small>
       <div class="chips">
         <button
           v-for="x in g.ids"
@@ -93,29 +93,6 @@ function useBlend(id: string) {
   align-items: center;
   gap: 8px;
 }
-.filter {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 8px;
-  border: 1px solid var(--line2);
-  border-radius: var(--r2);
-  background: var(--raised);
-  color: var(--ink3);
-  width: min(240px, 100%);
-}
-.filter input {
-  border: 0;
-  background: none;
-  outline: 0;
-  min-width: 0;
-  flex: 1;
-  height: 26px;
-  padding: 0;
-  font: 12px var(--mono);
-  color: var(--ink);
-}
 .btn.on {
   color: var(--c);
   background: var(--hover);
@@ -123,10 +100,6 @@ function useBlend(id: string) {
 .grp small {
   display: block;
   margin-bottom: 4px;
-  font: 600 10.5px var(--ui);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink3);
 }
 .chips {
   display: flex;
@@ -139,7 +112,7 @@ function useBlend(id: string) {
   gap: 4px;
   font: 11.5px var(--mono);
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   border: 1px solid var(--line2);
   color: var(--ink2);
   background: var(--raised);
@@ -164,9 +137,5 @@ function useBlend(id: string) {
   from {
     opacity: 0.4;
   }
-}
-small.h {
-  color: var(--ink3);
-  font-size: 11.5px;
 }
 </style>

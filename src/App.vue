@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { defineAsyncComponent, watchEffect } from "vue";
-import { useEventListener, useMediaQuery, usePreferredDark } from "@vueuse/core";
+import { useEventListener, usePreferredDark } from "@vueuse/core";
 import TopBar from "./components/TopBar.vue";
 import Sidebar from "./components/Sidebar.vue";
 import Toast from "./components/Toast.vue";
@@ -11,15 +11,13 @@ import Settings from "./components/Settings.vue";
 import Onboarding from "./components/Onboarding.vue";
 // loaded on first use: epub-ts and jszip stay out of the main bundle
 const EpubImport = defineAsyncComponent(() => import("./components/EpubImport.vue"));
-import { settings, device, hasTts, FONTS } from "./settings";
+import { device, FONTS } from "./settings";
 import { library } from "./library";
-import { ui, edit } from "./ui";
-import { addFromText, undoWithToast } from "./paste";
-import * as engine from "./engine";
+import { ui } from "./ui";
+import { addFromText } from "./paste";
+import { runShortcut } from "./shortcuts";
 
-const MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 const dark = usePreferredDark();
-const narrow = useMediaQuery("(max-width: 820px)");
 
 watchEffect(() => {
   const r = device.reading;
@@ -30,11 +28,6 @@ watchEffect(() => {
   root.style.setProperty("--rl", String(r.lineHeight));
   root.style.setProperty("--rw", r.width + "ch");
 });
-
-function toggleSide() {
-  if (narrow.value) ui.sidebarDrawer = !ui.sidebarDrawer;
-  else device.sidebarOpen = !device.sidebarOpen;
-}
 
 const inField = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.matches("input,textarea,select") || t.isContentEditable);
@@ -56,80 +49,19 @@ useEventListener(document, "drop", (e: DragEvent) => {
   ui.epubFile = f;
 });
 
-const speed = (d: number) => engine.setSpeed(Math.round((settings.speed + d) * 10) / 10);
-
 useEventListener(document, "keydown", (e: KeyboardEvent) => {
-  // rows in the sidebar handle their own keys and preventDefault them
-  if (e.defaultPrevented || inField(e.target) || ui.shortcutsOpen) return;
-  const k = e.key;
-  if (MAC ? e.metaKey : e.ctrlKey) {
-    if (k === ",") {
-      e.preventDefault();
-      ui.view = ui.view === "settings" ? "reader" : "settings";
-    } else if (k.toLowerCase() === "z" && !e.shiftKey) {
-      e.preventDefault();
-      undoWithToast();
-    }
+  // rows in the sidebar handle their own keys and preventDefault them; dialogs keep theirs
+  if (e.defaultPrevented || inField(e.target) || document.querySelector("dialog[open]")) return;
+  if ((e.target as HTMLElement).tagName === "BUTTON" && (e.key === " " || e.key === "Enter"))
     return;
-  }
-  if (e.metaKey || e.ctrlKey || e.altKey) return;
-  if ((e.target as HTMLElement).tagName === "BUTTON" && (k === " " || k === "Enter")) return;
-  const fwd = k === "ArrowRight";
-  switch (k) {
-    case " ":
-      e.preventDefault();
-      if (hasTts.value) return engine.toggle();
-      ui.view = "settings"; // listening needs a provider
-      ui.settingsTab = "providers";
-      return;
-    case "ArrowLeft":
-    case "ArrowRight":
-      if (ui.view !== "reader") return;
-      e.preventDefault();
-      ui.follow = true;
-      if (e.shiftKey) return fwd ? engine.nextPara() : engine.prevPara();
-      return fwd ? engine.next() : engine.prev();
-    case "j":
-    case "J":
-      return engine.nextChapter();
-    case "k":
-    case "K":
-      return engine.prevChapter();
-    case "[":
-      return speed(-0.1);
-    case "]":
-      return speed(0.1);
-    case "f":
-    case "F":
-      ui.follow = true;
-      return;
-    case "r":
-    case "R":
-      return engine.retry();
-    case "e":
-    case "E":
-      if (ui.currentId) edit(ui.currentId);
-      return;
-    case "b":
-    case "B":
-      return toggleSide();
-    case "a":
-    case "A":
-      ui.readingOpen = !ui.readingOpen;
-      return;
-    case "?":
-      ui.shortcutsOpen = true;
-      return;
-    case "Escape":
-      if (ui.view === "settings") ui.view = "reader";
-      return;
-  }
+  if (runShortcut(e)) e.preventDefault();
+  else if (e.key === "Escape" && ui.view === "settings") ui.view = "reader";
 });
 </script>
 
 <template>
   <div class="app">
-    <TopBar @side="toggleSide" />
+    <TopBar />
     <div class="mid" :class="{ noside: !device.sidebarOpen }">
       <Sidebar />
       <main>

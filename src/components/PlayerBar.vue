@@ -3,7 +3,8 @@ import { computed, ref, watch, onBeforeUnmount } from "vue";
 import { Moon, Play, Pause, SkipBack, SkipForward, TriangleAlert } from "@lucide/vue";
 import { settings, voiceFor, providerById, hasTts } from "../settings";
 import { current, currentDoc, CHARS_PER_SEC } from "../library";
-import { ui } from "../ui";
+import { ui, openSettings, placePopover } from "../ui";
+import { MOD, clock, minutes, plural } from "../lib/format";
 import {
   player,
   toggle,
@@ -25,11 +26,6 @@ const nSegs = computed(() => doc.value?.segs.length ?? 0);
 const kind = computed(() => seg.value?.kind ?? "narr");
 const voice = computed(() => voiceFor(kind.value));
 
-const fmt = (sec: number) => {
-  const s = Math.round(sec);
-  return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
-};
-const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const host = (url = "") => url.replace(/^https?:\/\//, "").replace(/\/.*$/, "") || "the provider";
 
 const phase = computed(() => {
@@ -42,24 +38,13 @@ const phase = computed(() => {
 });
 
 const totalSec = computed(() => player.total || (doc.value ? doc.value.chars / CHARS_PER_SEC : 0));
-const mins = computed(() => Math.max(1, Math.round(totalSec.value / settings.speed / 60)));
-
-function openSettings(
-  tab: typeof ui.settingsTab,
-  providerId: string | null = null,
-  fixKey = false,
-) {
-  ui.view = "settings";
-  ui.settingsTab = tab;
-  ui.openProviderId = providerId;
-  ui.fixKey = fixKey;
-}
+const mins = computed(() => minutes(totalSec.value, settings.speed));
 
 // ---------- status two-liner ----------
 const status = computed(() => {
   switch (phase.value) {
     case "empty":
-      return { t: "No chapter yet", s: "Paste one with ⌘V" };
+      return { t: "No chapter yet", s: `Paste one with ${MOD}V` };
     case "noprov":
       return { t: "No TTS provider", s: "Reading works. Listening needs one.", link: true };
     case "buffering": {
@@ -79,7 +64,7 @@ const status = computed(() => {
       };
     }
     case "end":
-      return { t: "End of the list", s: "Paste the next chapter with ⌘V" };
+      return { t: "End of the list", s: `Paste the next chapter with ${MOD}V` };
   }
   if (!player.started)
     return {
@@ -89,7 +74,7 @@ const status = computed(() => {
   const sp = settings.speed;
   return {
     t: `Segment ${player.seg + 1} of ${nSegs.value}`,
-    s: `${fmt(player.elapsed / sp)} / ${player.totalExact ? "" : "~"}${fmt(player.total / sp)}`,
+    s: `${clock(player.elapsed / sp)} / ${player.totalExact ? "" : "~"}${clock(player.total / sp)}`,
   };
 });
 
@@ -209,24 +194,7 @@ const timing = computed(() => {
     body: "The transcript for this segment has not arrived yet. The highlight is estimated until it does, then switches over without a jump.",
   };
 });
-const chipEl = ref<HTMLElement | null>(null);
-const popEl = ref<HTMLElement | null>(null);
-function onPopToggle(e: Event) {
-  if ((e as ToggleEvent).newState !== "open" || !chipEl.value || !popEl.value) return;
-  const r = chipEl.value.getBoundingClientRect(),
-    st = popEl.value.style;
-  st.right = Math.max(8, innerWidth - r.right) + "px";
-  st.bottom = innerHeight - r.top + 10 + "px";
-}
-// popovers open above the chip that opened them
-function placeAbove(e: Event, chip: HTMLElement | null) {
-  const pop = e.target as HTMLElement;
-  if ((e as ToggleEvent).newState !== "open" || !chip) return;
-  const r = chip.getBoundingClientRect();
-  pop.style.right = Math.max(8, innerWidth - r.right) + "px";
-  pop.style.bottom = innerHeight - r.top + 10 + "px";
-}
-const sleepEl = ref<HTMLElement | null>(null);
+const timingPop = ref<HTMLElement | null>(null);
 const sleepPop = ref<HTMLElement | null>(null);
 const SLEEP: [string, null | "chapter" | number][] = [
   ["Off", null],
@@ -252,7 +220,7 @@ function pickSleep(v: null | "chapter" | number) {
 
 function runTiming(run: () => unknown) {
   run();
-  popEl.value?.hidePopover();
+  timingPop.value?.hidePopover();
 }
 
 const step = (d: number) => setSpeed(Math.round((settings.speed + d) * 10) / 10);
@@ -349,16 +317,10 @@ const step = (d: number) => setSpeed(Math.round((settings.speed + d) * 10) / 10)
             }}</span>
             <b>{{ voice.voice || "no voice set" }}</b>
           </button>
-          <button
-            ref="chipEl"
-            class="chip timing"
-            :class="timing.cls"
-            popovertarget="lectern-timing"
-          >
+          <button class="chip timing" :class="timing.cls" popovertarget="lectern-timing">
             <i class="ring" /><span>{{ timing.label }}</span>
           </button>
           <button
-            ref="sleepEl"
             class="chip sleep"
             :class="{ on: sleepTimer.mode }"
             :title="sleepTimer.mode ? `Sleep timer: ${sleepLabel}` : 'Sleep timer'"
@@ -383,7 +345,7 @@ const step = (d: number) => setSpeed(Math.round((settings.speed + d) * 10) / 10)
       ref="sleepPop"
       popover
       class="pop menu"
-      @toggle="placeAbove($event, sleepEl)"
+      @beforetoggle="placePopover($event, 'above')"
     >
       <h4>Sleep timer</h4>
       <button
@@ -401,7 +363,13 @@ const step = (d: number) => setSpeed(Math.round((settings.speed + d) * 10) / 10)
       </button>
       <p class="note">Counts only while playing, and fades out over the last few seconds.</p>
     </div>
-    <div id="lectern-timing" ref="popEl" popover class="pop" @toggle="onPopToggle">
+    <div
+      id="lectern-timing"
+      ref="timingPop"
+      popover
+      class="pop"
+      @beforetoggle="placePopover($event, 'above')"
+    >
       <h4>Highlight timing · {{ timing.label }}</h4>
       <p>{{ timing.body }}</p>
       <div v-if="timing.act" class="acts">
@@ -505,10 +473,6 @@ const step = (d: number) => setSpeed(Math.round((settings.speed + d) * 10) / 10)
   width: 32px;
   height: 32px;
 }
-.ctl button:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
 .playb {
   width: 36px;
   height: 36px;
@@ -585,7 +549,7 @@ const step = (d: number) => setSpeed(Math.round((settings.speed + d) * 10) / 10)
   align-items: center;
   gap: 6px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   font-size: 12px;
   color: var(--ink2);
   white-space: nowrap;
@@ -620,7 +584,9 @@ const step = (d: number) => setSpeed(Math.round((settings.speed + d) * 10) / 10)
 .pop.menu {
   width: 200px;
   padding: 8px;
-  display: grid;
+}
+.pop.menu:popover-open {
+  display: grid; /* only while open: a plain display would override the closed popover's none */
 }
 .pop.menu h4 {
   margin: 4px 8px 6px;
@@ -672,33 +638,6 @@ const step = (d: number) => setSpeed(Math.round((settings.speed + d) * 10) / 10)
   font-variant-numeric: tabular-nums;
 }
 
-.pop {
-  margin: 0;
-  inset: auto;
-  position: fixed;
-  border: 1px solid var(--line2);
-  border-radius: var(--r3);
-  background: var(--raised);
-  color: var(--ink);
-  box-shadow: var(--shadow);
-  padding: 14px;
-  width: 300px;
-  max-width: calc(100vw - 16px);
-}
-.pop h4 {
-  margin: 0 0 10px;
-  font: 600 11px var(--ui);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink2);
-}
-.pop p {
-  margin: 0 0 10px;
-  color: var(--ink2);
-}
-.pop p:last-child {
-  margin: 0;
-}
 .acts {
   display: flex;
   flex-wrap: wrap;
