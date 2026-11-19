@@ -67,12 +67,8 @@ const html = computed(() => {
       out += "</tr>";
       return;
     }
-    out +=
-      b.tag === "h"
-        ? '<p class="hd">'
-        : b.tag === "li"
-          ? `<p class="li" data-n="${attr(b.n!)}">`
-          : "<p>";
+    const cls = [b.tag === "h" && "hd", b.tag === "li" && "li", b.center && "ctr"].filter(Boolean);
+    out += `<p${cls.length ? ` class="${cls.join(" ")}"` : ""}${b.n ? ` data-n="${attr(b.n)}"` : ""}>`;
     for (const si of idx) {
       const s = d.segs[si]!;
       out += esc(s.lead) + segHtml(s) + esc(s.trail);
@@ -319,8 +315,10 @@ function onClick(e: MouseEvent) {
           <div class="edit-bar">
             <span
               >Each line is a paragraph. <code>**bold**</code> <code>*italic*</code>
-              <code>~~strike~~</code> <code>&gt; box</code> <code>***</code> scene break. Unchanged
-              paragraphs keep their audio.</span
+              <code>~~strike~~</code> <code>-&gt; centred &lt;-</code> <code>&gt; box</code> <code
+                >***</code
+              >
+              scene break. Unchanged paragraphs keep their audio.</span
             >
             <span class="sp" />
             <button class="btn ghost" @click="ui.editingId = null">Cancel <kbd>Esc</kbd></button>
@@ -437,6 +435,9 @@ function onClick(e: MouseEvent) {
   font-size: 1.15em;
   font-weight: 700;
   color: var(--ink-hi);
+}
+.text :deep(p.ctr) {
+  text-align: center;
 }
 .text :deep(p.li) {
   padding-left: 1.6em;

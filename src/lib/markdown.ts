@@ -27,6 +27,23 @@ td.addRule("strike", {
   replacement: wrap("~~"),
 });
 
+// Centred lines (Chrome copies text-align inline): "-> text <-", each line of the paragraph.
+const centred = (n: HTMLElement) =>
+  /text-align:\s*center/i.test(n.getAttribute("style") ?? "") ||
+  /^center$/i.test(n.getAttribute("align") ?? "");
+const centre = (c: string) =>
+  c
+    .split("\n")
+    .map((l) => (l.trim() ? `-> ${l.trim()} <-` : l))
+    .join("\n");
+td.addRule("centred", {
+  filter: (n) => /^(P|H[1-6])$/.test(n.nodeName) && centred(n),
+  replacement: (c, n) =>
+    n.nodeName === "P"
+      ? `\n\n${centre(c)}\n\n`
+      : `\n\n${"#".repeat(+n.nodeName[1]!)} ${centre(c.replace(/\s*\n\s*/g, " "))}\n\n`,
+});
+
 // Tables: one-column tables (Royal Road "system boxes") become quotes, others GFM tables.
 type El = HTMLElement;
 const tableOf = (n: El) => {
@@ -99,6 +116,7 @@ export interface Block {
   table?: number;
   head?: boolean;
   cells?: number;
+  center?: boolean;
 }
 /** Text with one mark string per UTF-16 unit: "", "b", "b i", "s", "c"… */
 export interface Span {
@@ -139,6 +157,14 @@ function inline(children: Token[]): Span[] {
     }
   }
   return out;
+}
+
+/** "-> text <-" -> the text, or the same span when it is not centred. */
+function unCentre(s: Span): Span {
+  const m = /^(\s*->\s*)(.*?)\s*<-\s*$/.exec(s.text);
+  if (!m) return s;
+  const a = m[1]!.length;
+  return { text: m[2]!, marks: s.marks.slice(a, a + m[2]!.length) };
 }
 
 export function markdownLines(src: string): Line[] {
@@ -209,8 +235,11 @@ export function markdownLines(src: string): Line[] {
           });
           break;
         }
-        for (const s of spans)
-          if (s.text.trim()) emit({ tag: n ? "li" : tag, ...(n && { n }) }, [s]);
+        for (const s of spans) {
+          const c = unCentre(s);
+          if (c.text.trim())
+            emit({ tag: n ? "li" : tag, ...(n && { n }), ...(c !== s && { center: true }) }, [c]);
+        }
       }
     }
   }

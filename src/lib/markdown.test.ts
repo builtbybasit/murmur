@@ -40,6 +40,22 @@ assert.deepEqual(
 );
 assert.equal(td.segs[4]!.words[2]!.m, "s");
 
+// centred paragraphs and headings survive as "-> text <-"
+const c = htmlToMarkdown(
+  `<p style="text-align: center;"><strong>Classes Available</strong><br>Brawler</p><h2 align="center">Status</h2><p style="text-align: start">Left</p>`,
+);
+assert.equal(c, "-> **Classes Available** <-\n-> Brawler <-\n\n## -> Status <-\n\nLeft");
+const cd = buildDoc(c);
+assert.deepEqual(
+  cd.blocks.map((b) => b.tag + (b.center ? "C" : "")),
+  ["pC", "pC", "hC", "p"],
+);
+assert.deepEqual(
+  cd.segs.map((s) => s.core),
+  ["Classes Available", "Brawler", "Status", "Left"],
+);
+assert.equal(cd.segs[0]!.words[0]!.m, "b");
+
 // plain text is Markdown too: every line a paragraph
 assert.equal(buildDoc("One.\nTwo *sighs*.\n\nThree.").paras.length, 3);
 console.log("markdown ok");
