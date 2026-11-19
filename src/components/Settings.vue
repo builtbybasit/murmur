@@ -14,7 +14,17 @@ import {
   type PresetKey,
   type Role,
 } from "../store";
-import { player, preview, cacheStats, clearCache, retry } from "../engine";
+import {
+  player,
+  preview,
+  cacheStats,
+  clearCache,
+  retry,
+  storageByBook,
+  dropAudio,
+  type BookStorage,
+} from "../engine";
+import { unusedImages } from "../lib/images";
 import { testConnection, fetchVoices } from "../lib/api";
 import { segmentPara } from "../lib/segment";
 import VoicePicker from "./VoicePicker.vue";
@@ -168,7 +178,30 @@ function setPrefetch(e: Event) {
 
 // ---------- storage ----------
 const stats = ref<{ segments: number; bytes: number } | null>(null);
-const loadStats = async () => (stats.value = await cacheStats());
+const perBook = ref<Awaited<ReturnType<typeof storageByBook>> | null>(null);
+const imgs = ref<Awaited<ReturnType<typeof unusedImages>> | null>(null);
+const loadStats = async () => {
+  stats.value = await cacheStats();
+  perBook.value = await storageByBook();
+  imgs.value = await unusedImages(library.chapters.map((c) => c.body));
+};
+async function clearBook(b: BookStorage) {
+  await dropAudio(b.keys, b.book);
+  await loadStats();
+  toast({ title: `Cleared audio for ${b.book || "loose chapters"}`, sub: size(b.bytes) }, 3000);
+}
+async function clearOther() {
+  const o = perBook.value!.other;
+  await dropAudio(o.keys);
+  await loadStats();
+  toast({ title: "Removed audio nothing plays any more", sub: size(o.bytes) }, 3000);
+}
+async function clearImages() {
+  const n = imgs.value!.count;
+  await imgs.value!.remove();
+  await loadStats();
+  toast({ title: `Removed ${n} unused image${n === 1 ? "" : "s"}` }, 3000);
+}
 watch(
   () => ui.settingsTab,
   (t) => t === "storage" && loadStats(),
@@ -537,6 +570,16 @@ async function clear() {
               {{ library.chapters.length === 1 ? "chapter" : "chapters" }}</span
             >
             <span />
+            <span>Images</span>
+            <span
+              >{{ imgs ? `${imgs.total} from imported books` : "…" }}<br /><small
+                v-if="imgs?.count"
+                class="h"
+                >{{ imgs.count }} no longer used by any chapter ({{ size(imgs.bytes) }})</small
+              ></span
+            >
+            <button v-if="imgs?.count" class="btn" @click="clearImages">Remove unused</button>
+            <span v-else />
             <span>Settings and keys</span>
             <span
               >Stored unencrypted in this browser<br /><small class="h"
@@ -544,6 +587,37 @@ async function clear() {
               ></span
             >
             <span />
+          </div>
+        </div>
+        <h2>Audio by book</h2>
+        <p class="hint">
+          For the voices you use now. Clearing only removes audio; it is generated again when you
+          play.
+        </p>
+        <div class="box">
+          <p v-if="!perBook" class="h">Adding it up…</p>
+          <div v-else class="kv">
+            <template v-for="b in perBook.books" :key="b.book">
+              <span>{{ b.book || "Loose chapters" }}</span>
+              <span
+                >{{ size(b.bytes) }}<br /><small class="h"
+                  >{{ b.chapters }} {{ b.chapters === 1 ? "chapter" : "chapters" }} ·
+                  {{ b.cached.toLocaleString() }} of {{ b.segments.toLocaleString() }} segments
+                  cached</small
+                ></span
+              >
+              <button class="btn" :disabled="!b.cached" @click="clearBook(b)">Clear</button>
+            </template>
+            <span>Other audio</span>
+            <span
+              >{{ size(perBook.other.bytes) }}<br /><small class="h"
+                >{{ perBook.other.segments.toLocaleString() }} segments from old voices, old
+                spoken-text rules or deleted chapters. Nothing in your library plays them.</small
+              ></span
+            >
+            <button class="btn" :disabled="!perBook.other.segments" @click="clearOther">
+              Remove
+            </button>
           </div>
         </div>
       </template>

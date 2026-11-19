@@ -1,5 +1,5 @@
 // Audio cache in IndexedDB: one entry per (provider URL, model, voice, text), with duration and STT words.
-import { createStore, get, getMany, set, del, values, clear } from "idb-keyval";
+import { createStore, get, getMany, set, del, delMany, entries, values, clear } from "idb-keyval";
 import type { SttWord } from "./align";
 
 export interface CacheEntry {
@@ -49,3 +49,9 @@ export async function stats() {
   };
 }
 export const clearAll = () => clear(store);
+export const dropEntries = (keys: string[]) => delMany(keys, store);
+/** [key, bytes] of every cached segment. */
+export const sizes = async () =>
+  (await entries<string, CacheEntry>(store)).map(
+    ([k, e]) => [k, e.bytes ?? e.blob?.size ?? 0] as const,
+  );

@@ -1,6 +1,6 @@
 // Book images (from EPUB imports) in IndexedDB, keyed by content hash. Chapters reference them
 // as ![alt](img:<id>) in their Markdown.
-import { createStore, get, set } from "idb-keyval";
+import { createStore, delMany, entries, get, set } from "idb-keyval";
 
 const store = createStore("lectern-images", "images");
 
@@ -28,4 +28,23 @@ export function imageUrl(id: string): Promise<string | null> {
       )),
     );
   return u;
+}
+
+/** Images no chapter body references any more: count and bytes, plus a remover. */
+export async function unusedImages(bodies: string[]) {
+  const used = new Set(
+    bodies.flatMap((b) => [...b.matchAll(/\(img:([0-9a-f]+)\)/g)].map((m) => m[1]!)),
+  );
+  const all = await entries<string, Blob>(store);
+  const unused = all.filter(([id]) => !used.has(id));
+  return {
+    total: all.length,
+    count: unused.length,
+    bytes: unused.reduce((n, [, b]) => n + b.size, 0),
+    remove: () =>
+      delMany(
+        unused.map(([id]) => id),
+        store,
+      ),
+  };
 }

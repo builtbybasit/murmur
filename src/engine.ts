@@ -1173,6 +1173,63 @@ export function stopPreview() {
   player.previewing = null;
 }
 
+// ---------- storage by book ----------
+
+export interface BookStorage {
+  book: string; // "" = loose chapters
+  chapters: number;
+  segments: number;
+  cached: number;
+  bytes: number;
+  keys: string[];
+}
+/**
+ * Cached audio per book for the current voices, plus "other" audio: old voices, old
+ * spoken-text rules and deleted chapters (nothing in the library would play it).
+ */
+export async function storageByBook(): Promise<{
+  books: BookStorage[];
+  other: { segments: number; bytes: number; keys: string[] };
+}> {
+  const size = new Map(await cache.sizes());
+  const byBook = new Map<string, BookStorage>();
+  const used = new Set<string>();
+  for (const c of library.chapters) {
+    const book = c.book ?? "";
+    let b = byBook.get(book);
+    if (!b)
+      byBook.set(book, (b = { book, chapters: 0, segments: 0, cached: 0, bytes: 0, keys: [] }));
+    b.chapters++;
+    for (const seg of docOf(c).segs) {
+      if (!spoken(seg)) continue;
+      const k = keyOf(seg);
+      b.segments++;
+      if (!size.has(k) || used.has(k)) continue; // a repeated line is counted once
+      used.add(k);
+      b.cached++;
+      b.bytes += size.get(k)!;
+      b.keys.push(k);
+    }
+  }
+  const other = [...size].filter(([k]) => !used.has(k));
+  return {
+    books: [...byBook.values()],
+    other: {
+      segments: other.length,
+      bytes: other.reduce((n, [, v]) => n + v, 0),
+      keys: other.map(([k]) => k),
+    },
+  };
+}
+
+/** Delete cached audio by key; a book's chapters lose their "fully generated" mark. */
+export async function dropAudio(keys: string[], book?: string) {
+  await cache.dropEntries(keys);
+  if (book !== undefined)
+    for (const c of library.chapters) if ((c.book ?? "") === book) delete c.ready;
+  refresh();
+}
+
 /** { segments, bytes } across all chapters */
 export async function cacheStats(): Promise<{ segments: number; bytes: number }> {
   return cache.stats().catch(() => ({ segments: 0, bytes: 0 }));
