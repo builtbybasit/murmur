@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Provider <select> + model input with that provider's models as suggestions. Goes inside a `.f`.
 import { useId } from "vue";
-import { settings, providerById, type ProviderKind } from "../../settings";
+import { settings, providerById, type ProviderKind } from "@/settings";
 
 defineProps<{ kind: ProviderKind; placeholder: string; disabled?: boolean }>();
 defineEmits<{ change: [] }>();

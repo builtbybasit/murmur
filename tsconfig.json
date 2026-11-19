@@ -3,7 +3,10 @@
   "compilerOptions": {
     "types": ["node", "vite/client"],
     "noUnusedLocals": true,
-    "noUnusedParameters": true
+    "noUnusedParameters": true,
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
   "include": ["src", "dev", "vite.config.ts"]
 }

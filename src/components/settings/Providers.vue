@@ -11,12 +11,12 @@ import {
   type Provider,
   type PresetKey,
   type ProviderKind,
-} from "../../settings";
-import { ui, toast } from "../../ui";
-import { player, retry } from "../../engine";
-import { saveSettings } from "../../sync";
-import { testConnection, fetchVoices } from "../../lib/api";
-import { plural } from "../../lib/format";
+} from "@/settings";
+import { ui, toast } from "@/ui";
+import { player, retry } from "@/engine";
+import { saveSettings } from "@/sync";
+import { testConnection, fetchVoices } from "@/lib/api";
+import { plural } from "@/lib/format";
 
 const ADD: [PresetKey, ProviderKind, string][] = [
   ["kokoro", "tts", "Local Kokoro"],

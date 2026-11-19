@@ -2,9 +2,9 @@
 // Provider voices as grouped chips. Click = choose and hear it. Filter shows when the list is long.
 import { computed, ref } from "vue";
 import { AudioLines, Blend, Search } from "@lucide/vue";
-import { previewing, preview, stopPreview } from "../preview";
-import { groupVoices } from "../lib/voice";
-import { type Provider, type Role } from "../settings";
+import { previewing, preview, stopPreview } from "@/preview";
+import { groupVoices } from "@/lib/voice";
+import { type Provider, type Role } from "@/settings";
 import BlendBuilder from "./BlendBuilder.vue";
 
 const props = defineProps<{ role: Role; provider: Provider | null }>();

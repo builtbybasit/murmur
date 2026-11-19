@@ -1,11 +1,11 @@
 <script setup lang="ts">
 // EPUB import: pick chapters (front/back matter unticked), convert, add as one undo step.
 import { computed, onMounted, ref, shallowRef } from "vue";
-import { addChapters } from "../library";
-import { toast, ui } from "../ui";
-import { undoWithToast } from "../paste";
-import { openEpub, type Epub } from "../lib/epub";
-import { plural } from "../lib/format";
+import { addChapters } from "@/library";
+import { toast, ui } from "@/ui";
+import { undoWithToast } from "@/paste";
+import { openEpub, type Epub } from "@/lib/epub";
+import { plural } from "@/lib/format";
 
 const dlg = ref<HTMLDialogElement>();
 const book = shallowRef<Epub | null>(null); // epub-ts objects stay raw, not reactive proxies

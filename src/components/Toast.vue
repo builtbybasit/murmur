@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { TriangleAlert } from "@lucide/vue";
-import { ui, type ToastAction } from "../ui";
+import { ui, type ToastAction } from "@/ui";
 
 // Dismiss first: the action may raise its own toast (Undo does).
 function run(a: ToastAction) {

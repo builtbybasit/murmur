@@ -2,9 +2,9 @@
 // Mix 2–4 voices with weight sliders. Produces `a:0.7,b:0.3` (servers like Kokoro accept it).
 import { computed, reactive } from "vue";
 import { Play, Plus, X } from "@lucide/vue";
-import { previewing, preview, stopPreview } from "../preview";
-import { formatBlend, parseBlend, isBlend, type BlendPart } from "../lib/voice";
-import { type Role } from "../settings";
+import { previewing, preview, stopPreview } from "@/preview";
+import { formatBlend, parseBlend, isBlend, type BlendPart } from "@/lib/voice";
+import { type Role } from "@/settings";
 
 const props = defineProps<{ role: Role; voices: string[]; start: string }>();
 const emit = defineEmits<{ use: [voice: string]; error: [message: string] }>();

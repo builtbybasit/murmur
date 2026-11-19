@@ -2,9 +2,9 @@
 // Settings › Spoken text: what the TTS is sent. The reader always shows the original.
 import { computed, ref } from "vue";
 import { Plus, RotateCcw, Search, X } from "@lucide/vue";
-import { settings, restoreSpeechDefaults } from "../settings";
-import { toast } from "../ui";
-import { makeSpeaker } from "../lib/speech";
+import { settings, restoreSpeechDefaults } from "@/settings";
+import { toast } from "@/ui";
+import { makeSpeaker } from "@/lib/speech";
 
 const rules = settings.speech.rules;
 const sample = ref(

@@ -2,7 +2,7 @@
 import { computed, nextTick, reactive, ref, watch } from "vue";
 import { onClickOutside, onKeyStroke } from "@vueuse/core";
 import { ChevronRight, Download, FilePenLine, GripVertical, Trash2, X } from "@lucide/vue";
-import { settings, device } from "../settings";
+import { settings, device } from "@/settings";
 import {
   library,
   docOf,
@@ -14,13 +14,13 @@ import {
   renameBook,
   setBook,
   type Chapter,
-} from "../library";
-import { ui, toast, edit, narrow } from "../ui";
-import { minutes, plural, thousands } from "../lib/format";
-import { groupBooks, type Head } from "../lib/books";
-import { undoWithToast } from "../paste";
-import { player, open } from "../engine";
-import { genState, generateMany, toggleGenerate } from "../generate";
+} from "@/library";
+import { ui, toast, edit, narrow } from "@/ui";
+import { minutes, plural, thousands } from "@/lib/format";
+import { groupBooks, type Head } from "@/lib/books";
+import { undoWithToast } from "@/paste";
+import { player, open } from "@/engine";
+import { genState, generateMany, toggleGenerate } from "@/generate";
 import InlineRename from "./InlineRename.vue";
 import GenBadge from "./GenBadge.vue";
 import PasteSlot from "./PasteSlot.vue";

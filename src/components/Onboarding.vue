@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { reactive, ref } from "vue";
 import { Check } from "@lucide/vue";
-import { PRESETS, addProvider, hasTts, settings, type PresetKey } from "../settings";
-import { openSettings, toast } from "../ui";
-import { MOD } from "../lib/format";
-import { testConnection } from "../lib/api";
-import { pasteFromClipboard } from "../paste";
+import { PRESETS, addProvider, hasTts, settings, type PresetKey } from "@/settings";
+import { openSettings, toast } from "@/ui";
+import { MOD } from "@/lib/format";
+import { testConnection } from "@/lib/api";
+import { pasteFromClipboard } from "@/paste";
 
 const OPTS: [PresetKey, string][] = [
   ["kokoro", "Local Kokoro"],

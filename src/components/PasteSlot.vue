@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // The sidebar's foot: paste the next chapter, or import an EPUB.
-import { MOD } from "../lib/format";
-import { ui } from "../ui";
-import { pasteFromClipboard } from "../paste";
+import { MOD } from "@/lib/format";
+import { ui } from "@/ui";
+import { pasteFromClipboard } from "@/paste";
 
 function pickEpub(e: Event) {
   const input = e.target as HTMLInputElement;

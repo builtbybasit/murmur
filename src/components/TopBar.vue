@@ -2,10 +2,10 @@
 import { PanelLeft, Keyboard, Settings, Smartphone } from "@lucide/vue";
 import ReadingPopover from "./ReadingPopover.vue";
 import PhonePopover from "./PhonePopover.vue";
-import { current } from "../library";
-import { ui, toggleSettings, toggleSide } from "../ui";
-import { showShortcuts } from "../shortcuts";
-import { MOD } from "../lib/format";
+import { current } from "@/library";
+import { ui, toggleSettings, toggleSide } from "@/ui";
+import { showShortcuts } from "@/shortcuts";
+import { MOD } from "@/lib/format";
 
 // the phone button belongs on the Mac, not on the phone itself
 const onMac = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);

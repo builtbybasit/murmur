@@ -2,8 +2,8 @@
 // "Listen on your phone": a QR code of the phone link (with the access key). Shown on this Mac only.
 import { computed, ref } from "vue";
 import { renderSVG } from "uqr";
-import { getJson } from "../lib/server";
-import { placePopover, toast } from "../ui";
+import { getJson } from "@/lib/server";
+import { placePopover, toast } from "@/ui";
 
 const links = ref<string[]>([]);
 const link = computed(() => links.value[0] ?? "");

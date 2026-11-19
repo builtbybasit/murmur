@@ -3,13 +3,13 @@
 // would be too heavy as reactive vnodes); highlight classes are moved imperatively in paint().
 import { computed, ref, watch, onMounted } from "vue";
 import { useEventListener, useMediaQuery } from "@vueuse/core";
-import { settings, device } from "../settings";
-import { current, currentDoc, library, CHARS_PER_SEC } from "../library";
-import { MOD, minutes } from "../lib/format";
-import { ui } from "../ui";
-import { docHtml } from "../lib/render";
-import { player, seek, pause, nextChapter, upNext } from "../engine";
-import { genState, toggleGenerate } from "../generate";
+import { settings, device } from "@/settings";
+import { current, currentDoc, library, CHARS_PER_SEC } from "@/library";
+import { MOD, minutes } from "@/lib/format";
+import { ui } from "@/ui";
+import { docHtml } from "@/lib/render";
+import { player, seek, pause, nextChapter, upNext } from "@/engine";
+import { genState, toggleGenerate } from "@/generate";
 import ChapterEditor from "./ChapterEditor.vue";
 
 const scroller = ref<HTMLElement | null>(null);

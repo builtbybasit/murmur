@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { Moon } from "@lucide/vue";
-import { placePopover } from "../ui";
-import { sleepTimer, setSleep } from "../engine";
+import { placePopover } from "@/ui";
+import { sleepTimer, setSleep } from "@/engine";
 
 const pop = ref<HTMLElement | null>(null);
 const SLEEP: [string, null | "chapter" | number][] = [

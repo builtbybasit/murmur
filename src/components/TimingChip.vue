@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { settings, providerById } from "../settings";
-import { openSettings, placePopover } from "../ui";
-import { plural } from "../lib/format";
-import { player, retryAlignment } from "../engine";
+import { settings, providerById } from "@/settings";
+import { openSettings, placePopover } from "@/ui";
+import { plural } from "@/lib/format";
+import { player, retryAlignment } from "@/engine";
 
 const timing = computed(() => {
   const stt = settings.stt;

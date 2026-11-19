@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { device, FONTS } from "../settings";
-import { placePopover } from "../ui";
+import { device, FONTS } from "@/settings";
+import { placePopover } from "@/ui";
 
 const r = device.reading;
 const themes = ["light", "dark", "system"] as const;

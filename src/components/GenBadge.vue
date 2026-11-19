@@ -2,8 +2,8 @@
 // A chapter's background-generation state as a small button: progress ring, waiting, failed, done.
 import { computed } from "vue";
 import { CircleCheck, Clock, TriangleAlert } from "@lucide/vue";
-import type { Chapter } from "../library";
-import { generating, genState, toggleGenerate } from "../generate";
+import type { Chapter } from "@/library";
+import { generating, genState, toggleGenerate } from "@/generate";
 
 const props = defineProps<{ c: Chapter }>();
 const state = computed(() => genState(props.c));

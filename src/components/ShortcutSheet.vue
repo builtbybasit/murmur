@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { SHORTCUTS } from "../shortcuts";
+import { SHORTCUTS } from "@/shortcuts";
 </script>
 
 <template>

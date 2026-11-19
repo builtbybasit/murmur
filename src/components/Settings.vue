@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onUnmounted } from "vue";
 import { ArrowLeft } from "@lucide/vue";
-import { ui } from "../ui";
+import { ui } from "@/ui";
 import Providers from "./settings/Providers.vue";
 import Voices from "./settings/Voices.vue";
 import Segments from "./settings/Segments.vue";

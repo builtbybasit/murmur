@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { settings } from "../../settings";
-import { segmentPara } from "../../lib/segment";
+import { settings } from "@/settings";
+import { segmentPara } from "@/lib/segment";
 import ProviderModelFields from "./ProviderModelFields.vue";
 
 const SAMPLE = `'Mind the third step,' Wren said, shaking the twins' boots dry. "It's been loose since spring."`;

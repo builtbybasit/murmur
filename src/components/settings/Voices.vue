@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { reactive } from "vue";
 import { Play } from "@lucide/vue";
-import { settings, providerById, providerChanged, setSame, type Role } from "../../settings";
-import { preview } from "../../preview";
-import VoicePicker from "../VoicePicker.vue";
+import { settings, providerById, providerChanged, setSame, type Role } from "@/settings";
+import { preview } from "@/preview";
+import VoicePicker from "@/components/VoicePicker.vue";
 import ProviderModelFields from "./ProviderModelFields.vue";
 
 const ROLES = [

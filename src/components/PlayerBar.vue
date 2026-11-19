@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { Play, Pause, SkipBack, SkipForward } from "@lucide/vue";
-import { settings, voiceFor, hasTts } from "../settings";
-import { current, currentDoc, CHARS_PER_SEC } from "../library";
-import { ui, openSettings } from "../ui";
-import { MOD, clock, minutes, plural } from "../lib/format";
-import { player, toggle, prev, next, seek, setSpeed, upNext } from "../engine";
+import { settings, voiceFor, hasTts } from "@/settings";
+import { current, currentDoc, CHARS_PER_SEC } from "@/library";
+import { ui, openSettings } from "@/ui";
+import { MOD, clock, minutes, plural } from "@/lib/format";
+import { player, toggle, prev, next, seek, setSpeed, upNext } from "@/engine";
 import ErrorBar from "./ErrorBar.vue";
 import SleepChip from "./SleepChip.vue";
 import TimingChip from "./TimingChip.vue";

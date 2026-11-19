@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch, onBeforeUnmount } from "vue";
 import { TriangleAlert } from "@lucide/vue";
-import { providerById } from "../settings";
-import { openSettings } from "../ui";
-import { player, retry, skip } from "../engine";
+import { providerById } from "@/settings";
+import { openSettings } from "@/ui";
+import { player, retry, skip } from "@/engine";
 
 const host = (url = "") => url.replace(/^https?:\/\//, "").replace(/\/.*$/, "") || "the provider";
 

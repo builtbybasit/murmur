@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { library } from "../../library";
-import { toast } from "../../ui";
-import { clearCache, storageByBook, dropAudio, type BookStorage } from "../../generate";
-import { unusedImages, removeUnusedImages } from "../../lib/images";
-import { sync } from "../../lib/server";
-import { bytes, plural } from "../../lib/format";
+import { library } from "@/library";
+import { toast } from "@/ui";
+import { clearCache, storageByBook, dropAudio, type BookStorage } from "@/generate";
+import { unusedImages, removeUnusedImages } from "@/lib/images";
+import { sync } from "@/lib/server";
+import { bytes, plural } from "@/lib/format";
 
 const perBook = ref<Awaited<ReturnType<typeof storageByBook>> | null>(null);
 const imgs = ref<Awaited<ReturnType<typeof unusedImages>> | null>(null);

@@ -1,6 +1,6 @@
 // OpenAI-compatible provider calls, all through the /relay dev-server middleware (dev/server.ts),
 // which adds the provider's saved API key: keys never reach the browser.
-import type { Provider } from "../settings";
+import type { Provider } from "@/settings";
 import type { SttWord } from "./align";
 
 export type ErrorCode = "auth" | "rate" | "network" | "http";
