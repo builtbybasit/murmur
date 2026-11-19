@@ -44,6 +44,7 @@ onClickOutside(side, () => (ui.sidebarDrawer = false), {
 
 function openRow(id: string) {
   open(id);
+  ui.view = "reader"; // clicking a chapter while Settings is open shows that chapter
   if (narrow.value) ui.sidebarDrawer = false;
 }
 function openEditor(id: string) {
