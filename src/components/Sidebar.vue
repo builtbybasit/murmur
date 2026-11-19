@@ -7,7 +7,6 @@ import {
   Download,
   FilePenLine,
   GripVertical,
-  Pencil,
   Trash2,
   TriangleAlert,
 } from "@lucide/vue";
@@ -230,7 +229,13 @@ function pickEpub(e: Event) {
           "
           @blur="endRename(c.id, ($event.target as HTMLInputElement).value)"
         />
-        <span v-else class="t">{{ c.title }}</span>
+        <span
+          v-else
+          class="t"
+          title="Double-click to rename (F2)"
+          @dblclick.stop="ui.renamingId = c.id"
+          >{{ c.title }}</span
+        >
         <span v-if="c.short" class="short">short</span>
         <button
           v-if="generating[c.id]"
@@ -270,14 +275,6 @@ function pickEpub(e: Event) {
             @click.stop="toggleGenerate(c.id)"
           >
             <Download :size="14" :stroke-width="1.5" />
-          </button>
-          <button
-            class="ib"
-            title="Rename (F2)"
-            aria-label="Rename"
-            @click.stop="ui.renamingId = c.id"
-          >
-            <Pencil :size="14" :stroke-width="1.5" />
           </button>
           <button
             class="ib"
